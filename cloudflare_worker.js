@@ -793,6 +793,9 @@ export default {
         await env.NICKS_KV.put(String(body.user_id), String(body.nickname));
         if (body.link_token) {
           await env.NICKS_KV.put('link_token:' + String(body.user_id), String(body.link_token));
+          // Обратный индекс для verify-link: link_token → {user_id, nickname}
+          await env.NICKS_KV.put('verify:' + String(body.link_token),
+            JSON.stringify({ user_id: body.user_id, nickname: body.nickname }));
         }
         return jsonResp({ ok: true });
       } catch {
@@ -813,6 +816,8 @@ export default {
           promises.push(env.NICKS_KV.put(String(u.user_id), String(u.nickname)));
           if (u.link_token) {
             promises.push(env.NICKS_KV.put('link_token:' + String(u.user_id), String(u.link_token)));
+            promises.push(env.NICKS_KV.put('verify:' + String(u.link_token),
+              JSON.stringify({ user_id: u.user_id, nickname: u.nickname })));
           }
         });
         await Promise.all(promises);
@@ -921,6 +926,49 @@ export default {
         return jsonResp(JSON.parse(raw));
       }
 
+      return jsonResp({ error: 'method_not_allowed' }, 405);
+    }
+
+    // ===== /api/verify-link (NEW) — расширение проверяет токен привязки =====
+    // Расширение шлёт link_token → Worker находит user_id/nickname по
+    // обратному индексу verify:{link_token}. Кладёт pending verify-уведомление
+    // в KV verify_pending:{link_token} → бот поллит и шлёт «успешно привязано».
+    if (url.pathname === '/api/verify-link' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return jsonResp({ error: 'bad_request' }, 400); }
+      const linkToken = body && body.link_token;
+      if (!linkToken) {
+        return jsonResp({ error: 'bad_request', message: 'link_token required' }, 400);
+      }
+      const raw = await env.NICKS_KV.get('verify:' + String(linkToken));
+      if (!raw) {
+        return jsonResp({ error: 'not_found', message: 'Токен не найден. Получи новый через /facelogin.' }, 404);
+      }
+      let info;
+      try { info = JSON.parse(raw); } catch { info = {}; }
+      // Pending-уведомление для бота
+      await env.NICKS_KV.put('verify_pending:' + String(linkToken),
+        JSON.stringify({ user_id: info.user_id, nickname: info.nickname, ts: Math.floor(Date.now()/1000) }),
+        { expirationTtl: 600 });
+      return jsonResp({ ok: true, nickname: info.nickname || '' });
+    }
+
+    // ===== /api/verify-pending (NEW) — бот забирает pending verify-уведомления =====
+    if (url.pathname === '/api/verify-pending') {
+      if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+        return jsonResp({ error: 'unauthorized' }, 403);
+      }
+      if (request.method === 'GET') {
+        const linkToken = url.searchParams.get('link_token');
+        if (!linkToken) return jsonResp({ error: 'bad_request' }, 400);
+        const raw = await env.NICKS_KV.get('verify_pending:' + String(linkToken));
+        return jsonResp(raw ? JSON.parse(raw) : { empty: true });
+      }
+      if (request.method === 'DELETE') {
+        const linkToken = url.searchParams.get('link_token');
+        if (linkToken) await env.NICKS_KV.delete('verify_pending:' + String(linkToken));
+        return jsonResp({ ok: true });
+      }
       return jsonResp({ error: 'method_not_allowed' }, 405);
     }
 

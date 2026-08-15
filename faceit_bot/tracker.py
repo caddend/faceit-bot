@@ -163,6 +163,41 @@ async def _delete_pending_match(link_token: str, match_id: str):
         pass
 
 
+async def _fetch_verify_pending(link_token: str) -> dict | None:
+    """GET /api/verify-pending?link_token=... — возвращает pending verify или None."""
+    if not WEBAPP_URL:
+        return None
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{WEBAPP_URL}/api/verify-pending?link_token={link_token}",
+                headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
+                timeout=10,
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                return None if data.get("empty") else data
+    except Exception:
+        return None
+
+
+async def _clear_verify_pending(link_token: str):
+    """DELETE /api/verify-pending?link_token=... — убрать обработанное."""
+    if not WEBAPP_URL:
+        return
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.delete(
+                f"{WEBAPP_URL}/api/verify-pending?link_token={link_token}",
+                headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
+                timeout=10,
+            ) as resp:
+                pass
+    except Exception:
+        pass
+
+
 async def extension_match_worker():
     """Раз в 30с опрашивает Worker на предмет матчей, присланных расширением.
 
@@ -176,6 +211,25 @@ async def extension_match_worker():
     while True:
         try:
             for user_id, nickname, link_token in get_all_link_tokens():
+                # --- Проверка привязки расширения (verify-link) ---
+                verify = await _fetch_verify_pending(link_token)
+                if verify:
+                    try:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=(
+                                f"{section('РАСШИРЕНИЕ ПРИВЯЗАНО')}\n\n"
+                                f"Аккаунт: <b>{verify.get('nickname', nickname)}</b>\n"
+                                f"Теперь бот видит твои текущие матчи на faceit.com "
+                                f"и расширенную статистику (Rating 3.0, swing, ELO)."
+                            ),
+                        )
+                    except Exception:
+                        pass
+                    finally:
+                        await _clear_verify_pending(link_token)
+
+                # --- Матчи от расширения ---
                 matches = await _fetch_pending_matches(link_token)
                 if not matches:
                     continue
