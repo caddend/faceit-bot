@@ -94,11 +94,11 @@ $("save").addEventListener("click", async () => {
   $("save").textContent = "Сохранить";
 });
 
-// === Анализ чужого игрока ===
+// === Анализ матча по ссылке на room ===
 $("analyze").addEventListener("click", async () => {
-  const nickname = $("player-nick").value.trim();
-  if (!nickname) {
-    $("analyze-error").textContent = "Введи никнейм игрока";
+  const matchUrl = $("match-url").value.trim();
+  if (!matchUrl) {
+    $("analyze-error").textContent = "Введи ссылку на room матча";
     $("analyze-error").style.display = "block";
     $("analyze-ok").style.display = "none";
     return;
@@ -114,17 +114,29 @@ $("analyze").addEventListener("click", async () => {
     return;
   }
 
+  // Парсим match_id из URL: https://www.faceit.com/ru/cs2/room/1-8fc8f5d9-...
+  const matchIdMatch = matchUrl.match(/\/room\/(1-[a-f0-9-]+)/i);
+  if (!matchIdMatch) {
+    $("analyze-error").textContent = "Неверная ссылка (нужен формат /room/1-...)";
+    $("analyze-error").style.display = "block";
+    $("analyze-ok").style.display = "none";
+    return;
+  }
+
+  const matchId = matchIdMatch[1];
+  console.log("[Analyze] Parsed match_id:", matchId);
+
   $("analyze-ok").style.display = "none";
   $("analyze-error").style.display = "none";
   $("analyze").disabled = true;
   $("analyze").textContent = "Анализ...";
   $("analyze-status").classList.add("show");
-  $("analyze-result").innerHTML = '<span style="color:#ffa500">⏳ Ищу матч игрока...</span>';
+  $("analyze-result").innerHTML = '<span style="color:#ffa500">⏳ Загружаю данные матча...</span>';
 
   try {
     // Читаем session token из cookies Faceit
     const cookies = await chrome.cookies.getAll({
-      domain: "faceit.com"  // без точки в начале
+      domain: "faceit.com"
     });
     console.log("[Analyze] All Faceit cookies:", cookies.map(c => c.name));
 
@@ -136,12 +148,12 @@ $("analyze").addEventListener("click", async () => {
       console.log("[Analyze] Token length:", sessionToken.length);
     }
 
-    const resp = await fetch(`${WORKER_URL}/api/analyze-player`, {
+    const resp = await fetch(`${WORKER_URL}/api/analyze-match`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         link_token: token,
-        nickname,
+        match_id: matchId,
         faceit_session_token: sessionToken
       }),
     });
@@ -152,7 +164,7 @@ $("analyze").addEventListener("click", async () => {
       $("analyze-ok").style.display = "block";
       $("analyze-result").innerHTML = `<span style="color:#3ddc84">✓ Результат отправлен в Telegram</span>`;
     } else {
-      $("analyze-error").textContent = data.error || "Игрок не найден или нет активного матча";
+      $("analyze-error").textContent = data.error || "Не удалось загрузить матч";
       $("analyze-error").style.display = "block";
       $("analyze-result").innerHTML = `<span style="color:#ff6b6b">✗ ${data.error || "Ошибка"}</span>`;
     }

@@ -1,7 +1,7 @@
-"""Обработчик запросов анализа чужих игроков из расширения.
+"""Обработчик запросов анализа матчей из расширения.
 
-Расширение шлёт nickname → Worker кладёт в KV → этот модуль поллит KV →
-находит активный матч → вызывает prematch.py → отправляет результат в бот.
+Расширение шлёт match_id → Worker кладёт в KV → этот модуль поллит KV →
+загружает данные матча → вызывает prematch.py → отправляет результат в бот.
 """
 import asyncio
 import logging
@@ -9,17 +9,15 @@ import logging
 from aiogram import Bot
 
 from .config import WEBAPP_URL, WEBAPP_AUTH_SECRET, FACEIT_API_BASE
-from .prematch import get_ongoing_match, collect_prematch_data, call_prematch_llm
+from .prematch import collect_prematch_data, call_prematch_llm
 from .coach import _sanitize_for_telegram
 from .balance import get_balance_footer
-from .faceit_api import fetch_faceit_data
-from .config import FACEIT_API_BASE
 
 logger = logging.getLogger(__name__)
 
 
 async def poll_analyze_requests(bot: Bot):
-    """Поллит Worker KV для запросов анализа чужих игроков из расширения.
+    """Поллит Worker KV для запросов анализа матчей из расширения.
 
     Формат ключа в KV: analyze_request:{link_token}:{timestamp}
     Запускается как фоновая задача.
@@ -50,13 +48,12 @@ async def poll_analyze_requests(bot: Bot):
 async def process_analyze_request(bot: Bot, session, key: str):
     """Обрабатывает один запрос анализа.
 
-    1. Читает данные из KV (user_id, target_nickname)
-    2. Получает player_id по nickname
-    3. Ищет активный матч игрока
-    4. Собирает данные команд
-    5. Вызывает ИИ-анализ
-    6. Отправляет результат в Telegram
-    7. Удаляет ключ из KV
+    1. Читает данные из KV (user_id, match_id, faceit_session_token)
+    2. Загружает данные матча через Browser API
+    3. Собирает данные команд
+    4. Вызывает ИИ-анализ
+    5. Отправляет результат в Telegram
+    6. Удаляет ключ из KV
     """
     try:
         # Читаем данные запроса
@@ -70,86 +67,89 @@ async def process_analyze_request(bot: Bot, session, key: str):
             request_data = await resp.json()
 
         user_id = request_data.get('user_id')
-        target_nickname = request_data.get('target_nickname')
+        match_id = request_data.get('match_id')
         faceit_session_token = request_data.get('faceit_session_token')
 
-        print(f"[ANALYZE] user_id={user_id}, nickname={target_nickname}, has_token={bool(faceit_session_token)}")
+        print(f"[ANALYZE] user_id={user_id}, match_id={match_id}, has_token={bool(faceit_session_token)}")
 
-        if not user_id or not target_nickname:
+        if not user_id or not match_id:
             await delete_kv_key(session, key)
             return
 
-        # Получаем player_id по nickname
-        profile = await fetch_faceit_data(
-            f"{FACEIT_API_BASE}/players?nickname={target_nickname}"
-        )
-        if not profile or not profile.get('player_id'):
-            await bot.send_message(
-                user_id,
-                f"❌ Игрок <b>{target_nickname}</b> не найден на Faceit.",
-                parse_mode="HTML"
-            )
+        # Загружаем данные матча напрямую через Browser API
+        match_data = await fetch_match_data(session, match_id, faceit_session_token)
+        if not match_data:
+            await bot.send_message(user_id, "⚠️ Не удалось загрузить данные матча. Проверь ссылку.")
             await delete_kv_key(session, key)
             return
 
-        player_id = profile['player_id']
-
-        # Ищем активный матч (используем session token из расширения)
-        ongoing_match = await get_ongoing_match(player_id, faceit_session_token=faceit_session_token)
-        if not ongoing_match:
-            await bot.send_message(
-                user_id,
-                f"⚠️ У игрока <b>{target_nickname}</b> нет активного матча.",
-                parse_mode="HTML"
-            )
-            await delete_kv_key(session, key)
-            return
-
-        match_id = ongoing_match.get('match_id', '')
-
-        # Собираем данные команд
-        prematch_data = await collect_prematch_data(ongoing_match, player_id)
+        # Собираем данные команд (как в prematch.py)
+        prematch_data = await collect_prematch_data(match_data, faceit_session_token)
         if not prematch_data:
-            await bot.send_message(
-                user_id,
-                f"⚠️ Не удалось собрать данные о матче игрока <b>{target_nickname}</b>.",
-                parse_mode="HTML"
-            )
+            await bot.send_message(user_id, "⚠️ Не удалось собрать данные команд.")
             await delete_kv_key(session, key)
             return
 
         # Вызываем ИИ-анализ
-        text = await asyncio.to_thread(call_prematch_llm, prematch_data, target_nickname)
-        if not text:
-            await bot.send_message(
-                user_id,
-                f"⚠️ ИИ-анализ недоступен для игрока <b>{target_nickname}</b>.",
-                parse_mode="HTML"
-            )
+        analysis = await call_prematch_llm(prematch_data)
+        if not analysis:
+            await bot.send_message(user_id, "⚠️ ИИ-анализ не удался.")
             await delete_kv_key(session, key)
             return
 
-        # Отправляем результат
-        final_text = (
-            f"<b>Анализ матча игрока {target_nickname}</b>\n"
-            f"Match ID: <code>{match_id}</code>\n\n"
-            f"{_sanitize_for_telegram(text)}"
-            f"{await get_balance_footer()}"
-        )
+        # Форматируем и отправляем результат
+        text = _sanitize_for_telegram(analysis)
+        footer = await get_balance_footer()
+        final_text = f"{text}\n\n{footer}" if footer else text
 
-        await bot.send_message(user_id, final_text, parse_mode="HTML")
+        await bot.send_message(user_id, final_text, parse_mode="Markdown")
 
-        # Удаляем обработанный запрос
+        # Удаляем ключ из KV
         await delete_kv_key(session, key)
-        logger.info(f"[extension_analyze] Sent analysis for {target_nickname} to user {user_id}")
 
     except Exception as e:
-        logger.error(f"[extension_analyze] process error for key {key}: {e}")
-        # Удаляем ключ чтобы не зациклиться
+        logger.error(f"[extension_analyze] process error for {key}: {e}")
+        # Всё равно удаляем ключ чтобы не зациклиться
         try:
             await delete_kv_key(session, key)
         except:
             pass
+
+
+async def fetch_match_data(session, match_id: str, faceit_session_token: str = None):
+    """Загружает данные матча через Browser API (если есть токен) или Data API.
+
+    Возвращает dict с ключами: match_id, teams (faction1, faction2), rosters, etc.
+    """
+    # Пробуем Browser API (если есть session token)
+    if faceit_session_token:
+        url = f"https://api.faceit.com/match/v2/match/{match_id}"
+        headers = {
+            "Authorization": f"Bearer {faceit_session_token}",
+            "User-Agent": "Mozilla/5.0"
+        }
+        try:
+            async with session.get(url, headers=headers, timeout=12) as resp:
+                print(f"[Browser API] match status={resp.status}, match_id={match_id}")
+                if resp.status == 200:
+                    data = await resp.json()
+                    payload = data.get('payload')
+                    if payload:
+                        return payload
+        except Exception as e:
+            print(f"[Browser API] match error: {e}")
+
+    # Fallback: Data API (публичный, но может не видеть матчи в лобби)
+    url = f"{FACEIT_API_BASE}/matches/{match_id}"
+    try:
+        async with session.get(url, timeout=12) as resp:
+            print(f"[Data API] match status={resp.status}, match_id={match_id}")
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:
+        print(f"[Data API] match error: {e}")
+
+    return None
 
 
 async def delete_kv_key(session, key: str):
@@ -158,8 +158,8 @@ async def delete_kv_key(session, key: str):
         async with session.delete(
             f"{WEBAPP_URL}/api/kv-delete?key={key}",
             headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
-            timeout=5
+            timeout=10
         ) as resp:
             pass
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"[extension_analyze] delete key error: {e}")

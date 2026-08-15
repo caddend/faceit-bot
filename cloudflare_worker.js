@@ -1012,17 +1012,16 @@ export default {
       return jsonResp({ error: 'method_not_allowed' }, 405);
     }
 
-    // ===== /api/analyze-player (NEW) — анализ чужого игрока =====
-    // Расширение шлёт {link_token, nickname} → Worker проверяет токен,
-    // находит активный матч игрока, отправляет в бот для ИИ-анализа.
-    if (url.pathname === '/api/analyze-player' && request.method === 'POST') {
+    // ===== /api/analyze-match (NEW) — анализ матча по match_id =====
+    // Расширение шлёт {link_token, match_id, faceit_session_token} → Worker сохраняет в KV → бот обрабатывает
+    if (url.pathname === '/api/analyze-match' && request.method === 'POST') {
       let body;
       try { body = await request.json(); } catch { return jsonResp({ error: 'bad_request' }, 400); }
       const linkToken = body && body.link_token;
-      const targetNickname = body && body.nickname;
+      const matchId = body && body.match_id;
 
-      if (!linkToken || !targetNickname) {
-        return jsonResp({ error: 'bad_request', message: 'link_token и nickname обязательны' }, 400);
+      if (!linkToken || !matchId) {
+        return jsonResp({ error: 'bad_request', message: 'link_token и match_id обязательны' }, 400);
       }
 
       // Проверяем что link_token валидный (существует в БД)
@@ -1042,7 +1041,7 @@ export default {
       const requestId = 'analyze_request:' + linkToken + ':' + Date.now();
       await env.NICKS_KV.put(requestId, JSON.stringify({
         user_id: userId,
-        target_nickname: targetNickname,
+        match_id: matchId,
         faceit_session_token: body.faceit_session_token || null,
         ts: Math.floor(Date.now() / 1000)
       }), { expirationTtl: 600 }); // 10 минут TTL

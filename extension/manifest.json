@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Faceit Match Helper for Bot",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Перехватывает идущий матч на faceit.com и шлёт составы команд боту на ИИ-анализ.",
   "permissions": ["storage", "cookies"],
   "host_permissions": [
