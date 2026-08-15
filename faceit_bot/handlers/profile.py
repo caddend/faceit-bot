@@ -144,7 +144,7 @@ async def cmd_facelogin(message: types.Message, state: FSMContext):
     await state.set_state(FaceitLogin.waiting_for_token)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="📦 Установить расширение", url="https://github.com/cadd3nd/faceit-bot/raw/main/extension.zip")
+    builder.button(text="📦 Установить расширение", url="https://github.com/caddend/faceit-bot/raw/main/extension.zip")
     builder.button(text="❌ Отмена", callback_data="facelogin_cancel")
     builder.adjust(1)
 

@@ -22,6 +22,5 @@ faceit_bot/config.py
 *.swp
 
 # Сборки
-extension.zip
 build/
 dist/
