@@ -8,7 +8,7 @@ import logging
 
 from aiogram import Bot
 
-from .config import CLOUDFLARE_WORKER_URL, CLOUDFLARE_AUTH_SECRET
+from .config import WEBAPP_URL, WEBAPP_AUTH_SECRET, FACEIT_API_BASE
 from .prematch import get_ongoing_match, collect_prematch_data, call_prematch_llm
 from .coach import _sanitize_for_telegram
 from .balance import get_balance_footer
@@ -31,8 +31,8 @@ async def poll_analyze_requests(bot: Bot):
             # Получаем все ключи с префиксом analyze_request:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{CLOUDFLARE_WORKER_URL}/api/kv-list?prefix=analyze_request:",
-                    headers={"X-Auth-Secret": CLOUDFLARE_AUTH_SECRET},
+                    f"{WEBAPP_URL}/api/kv-list?prefix=analyze_request:",
+                    headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
                     timeout=10
                 ) as resp:
                     if resp.status == 200:
@@ -61,8 +61,8 @@ async def process_analyze_request(bot: Bot, session, key: str):
     try:
         # Читаем данные запроса
         async with session.get(
-            f"{CLOUDFLARE_WORKER_URL}/api/kv-get?key={key}",
-            headers={"X-Auth-Secret": CLOUDFLARE_AUTH_SECRET},
+            f"{WEBAPP_URL}/api/kv-get?key={key}",
+            headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
             timeout=10
         ) as resp:
             if resp.status != 200:
@@ -153,8 +153,8 @@ async def delete_kv_key(session, key: str):
     """Удаляет ключ из Worker KV."""
     try:
         async with session.delete(
-            f"{CLOUDFLARE_WORKER_URL}/api/kv-delete?key={key}",
-            headers={"X-Auth-Secret": CLOUDFLARE_AUTH_SECRET},
+            f"{WEBAPP_URL}/api/kv-delete?key={key}",
+            headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
             timeout=5
         ) as resp:
             pass
