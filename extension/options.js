@@ -123,9 +123,18 @@ $("analyze").addEventListener("click", async () => {
 
   try {
     // Читаем session token из cookies Faceit
-    const cookies = await chrome.cookies.getAll({ domain: ".faceit.com" });
+    const cookies = await chrome.cookies.getAll({
+      domain: "faceit.com"  // без точки в начале
+    });
+    console.log("[Analyze] All Faceit cookies:", cookies.map(c => c.name));
+
     const sessionCookie = cookies.find(c => c.name === "t");
     const sessionToken = sessionCookie ? sessionCookie.value : null;
+
+    console.log("[Analyze] Session token found:", !!sessionToken);
+    if (sessionToken) {
+      console.log("[Analyze] Token length:", sessionToken.length);
+    }
 
     const resp = await fetch(`${WORKER_URL}/api/analyze-player`, {
       method: "POST",
