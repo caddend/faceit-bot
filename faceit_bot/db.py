@@ -303,11 +303,19 @@ def resolve_nickname(message: types.Message, args: list):
 
 
 def create_link_token(user_id: int) -> str:
-    """Создаёт/обновляет link_token для пользователя (привязка расширения к боту).
+    """Создаёт/возвращает link_token для пользователя (привязка расширения к боту).
 
-    Токен хранится в БД и используется расширением при POST на Worker —
-    чтобы Worker знал, какому пользователю передать матч.
+    Если токен уже существует — возвращает его.
+    Если нет — генерирует новый и сохраняет в БД.
+    Токен используется расширением при POST на Worker.
     """
+    # Проверяем, есть ли уже токен
+    cursor.execute("SELECT link_token FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        return row[0]
+
+    # Создаём новый токен
     import secrets
     token = secrets.token_urlsafe(24)
     cursor.execute("UPDATE users SET link_token = ? WHERE user_id = ?", (token, user_id))
