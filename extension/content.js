@@ -19,13 +19,21 @@ window.addEventListener("message", (ev) => {
 setTimeout(() => {
   if (!_injectReady) {
     console.warn("[FaceitBot] MAIN-world inject не сработал, пробую fallback...");
-    try {
-      const s = document.createElement("script");
-      s.src = chrome.runtime.getURL("inject.js");
-      s.onload = () => s.remove();
-      (document.head || document.documentElement).appendChild(s);
-    } catch (e) {
-      console.warn("[FaceitBot] fallback inject не удался:", e);
+    const injectFallback = () => {
+      try {
+        const s = document.createElement("script");
+        s.src = chrome.runtime.getURL("inject.js");
+        s.onload = () => s.remove();
+        (document.head || document.documentElement).appendChild(s);
+      } catch (e) {
+        console.warn("[FaceitBot] fallback inject не удался:", e);
+      }
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', injectFallback);
+    } else {
+      injectFallback();
     }
   }
 }, 1500);
@@ -152,12 +160,20 @@ async function verifyLinkToken(token) {
   }
 }
 
-// Инициализация UI при загрузке
-injectUI();
-// Если есть закешированные статистика — показать
-chrome.storage.local.get(STATS_KEY, (res) => {
-  if (res[STATS_KEY]) renderStatsBox(res[STATS_KEY]);
-});
+// Инициализация UI при загрузке (ждём DOM)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    injectUI();
+    chrome.storage.local.get(STATS_KEY, (res) => {
+      if (res[STATS_KEY]) renderStatsBox(res[STATS_KEY]);
+    });
+  });
+} else {
+  injectUI();
+  chrome.storage.local.get(STATS_KEY, (res) => {
+    if (res[STATS_KEY]) renderStatsBox(res[STATS_KEY]);
+  });
+}
 
 async function getLinkToken() {
   return new Promise((resolve) => {
