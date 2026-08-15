@@ -1,14 +1,14 @@
 // Inject-скрипт (main world). Перехватывает fetch/XHR к api.faceit.com:
 //  - /match/v2/matches → идущий матч (составы команд)
 //  - любые ответы со статистикой (Rating 3.0, swing, elo-история) → scrape-данные
+// Все перехваченные url логируются в консоль для отладки.
 
 (function () {
   const MATCH_RE = /api\.faceit\.com\/match\/v2\/matches/;
-  // Паттерны ответов со статистикой, которых нет в публичном Data API v4.
   const STATS_RES = [
-    /api\.faceit\.com\/stats\//,            // stats/v1/...
-    /api\.faceit\.com\/match\/v2\/.*\/rating/, // rating матча
-    /api\.faceit\.com\/players\/.*\/elo/,      // elo-история
+    /api\.faceit\.com\/stats\//,
+    /api\.faceit\.com\/match\/v2\/.*\/rating/,
+    /api\.faceit\.com\/players\/.*\/elo/,
   ];
 
   function normalizeMatch(raw) {
@@ -61,15 +61,13 @@
 
   function sendMatch(match) {
     if (!match) return;
+    console.log("[FaceitBot] MATCH найден:", match.match_id, match.status);
     window.postMessage({ __faceit_bot: true, match }, "*");
   }
 
-  // Извлекаем интересующие поля из произвольного ответа статистики.
-  // Глубокий поиск по ключам — чтобы не зависеть от точной структуры.
   function extractStats(data) {
     if (!data) return null;
     const out = {};
-
     function walk(obj) {
       if (!obj || typeof obj !== "object") return;
       for (const [k, v] of Object.entries(obj)) {
@@ -80,7 +78,6 @@
         if (kl === "swing" || (kl.includes("swing") && !kl.includes("ing"))) {
           if (typeof v === "number" || (typeof v === "string" && v)) out.swing = v;
         }
-        // elo-история: массив точек {elo, ...} или {value, ts}
         if ((kl === "elo" || kl === "faceit_elo") && Array.isArray(v)) {
           out.elo_history = v.map(function (p) {
             return (p && (p.elo || p.value || p.Elo)) || null;
@@ -90,7 +87,6 @@
       }
     }
     walk(data);
-
     if (!out.rating_3_0 && !out.swing && !out.elo_history) return null;
     out.timestamp = Date.now();
     return out;
@@ -98,6 +94,7 @@
 
   function sendStats(payload) {
     if (!payload) return;
+    console.log("[FaceitBot] STATS найдены:", payload);
     window.postMessage({ __faceit_bot_stats: true, type: "advanced", payload }, "*");
   }
 
@@ -108,7 +105,6 @@
       if (MATCH_RE.test(url)) {
         sendMatch(normalizeMatch(data));
       }
-      // Скрап статистики: если в ответе есть нужные поля
       for (const re of STATS_RES) {
         if (re.test(url)) {
           sendStats(extractStats(data));
@@ -116,6 +112,13 @@
         }
       }
     } catch (e) {}
+  }
+
+  // Логируем ВСЕ запросы к api.faceit.com для отладки.
+  function logUrl(urlStr) {
+    if (urlStr.indexOf("api.faceit.com") !== -1) {
+      console.log("[FaceitBot] REQ:", urlStr);
+    }
   }
 
   function shouldIntercept(urlStr) {
@@ -129,6 +132,7 @@
   window.fetch = function () {
     const url = arguments[0];
     const urlStr = typeof url === "string" ? url : (url && url.url) || "";
+    logUrl(urlStr);
     const p = origFetch.apply(this, arguments);
     if (shouldIntercept(urlStr)) {
       p.then((resp) => resp.clone().text().then((t) => handleResponse(urlStr, t))).catch(() => {});
@@ -141,6 +145,7 @@
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__fb_url = url;
+    logUrl(url);
     return origOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function () {
@@ -153,4 +158,6 @@
     }
     return origSend.apply(this, arguments);
   };
+
+  console.log("[FaceitBot] inject loaded");
 })();
