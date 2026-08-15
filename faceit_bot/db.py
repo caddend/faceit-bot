@@ -346,8 +346,6 @@ def has_link_token(user_id: int) -> bool:
     cursor.execute("SELECT link_token FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     return bool(row and row[0])
-    )
-    return cursor.fetchall()
 
 
 def get_meta(key: str, default: str = "") -> str:
