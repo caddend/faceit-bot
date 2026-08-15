@@ -1043,6 +1043,7 @@ export default {
       await env.NICKS_KV.put(requestId, JSON.stringify({
         user_id: userId,
         target_nickname: targetNickname,
+        faceit_session_token: body.faceit_session_token || null,
         ts: Math.floor(Date.now() / 1000)
       }), { expirationTtl: 600 }); // 10 минут TTL
 

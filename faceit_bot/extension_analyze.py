@@ -71,6 +71,7 @@ async def process_analyze_request(bot: Bot, session, key: str):
 
         user_id = request_data.get('user_id')
         target_nickname = request_data.get('target_nickname')
+        faceit_session_token = request_data.get('faceit_session_token')
 
         if not user_id or not target_nickname:
             await delete_kv_key(session, key)
@@ -91,8 +92,8 @@ async def process_analyze_request(bot: Bot, session, key: str):
 
         player_id = profile['player_id']
 
-        # Ищем активный матч (без session token — только Data API)
-        ongoing_match = await get_ongoing_match(player_id, faceit_session_token=None)
+        # Ищем активный матч (используем session token из расширения)
+        ongoing_match = await get_ongoing_match(player_id, faceit_session_token=faceit_session_token)
         if not ongoing_match:
             await bot.send_message(
                 user_id,

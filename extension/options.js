@@ -122,10 +122,19 @@ $("analyze").addEventListener("click", async () => {
   $("analyze-result").innerHTML = '<span style="color:#ffa500">⏳ Ищу матч игрока...</span>';
 
   try {
+    // Читаем session token из cookies Faceit
+    const cookies = await chrome.cookies.getAll({ domain: ".faceit.com" });
+    const sessionCookie = cookies.find(c => c.name === "t");
+    const sessionToken = sessionCookie ? sessionCookie.value : null;
+
     const resp = await fetch(`${WORKER_URL}/api/analyze-player`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ link_token: token, nickname }),
+      body: JSON.stringify({
+        link_token: token,
+        nickname,
+        faceit_session_token: sessionToken
+      }),
     });
     const data = await resp.json();
 
