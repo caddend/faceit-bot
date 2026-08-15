@@ -9,7 +9,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..runtime import dp
-from ..config import FACEIT_API_BASE
+from ..config import FACEIT_API_BASE, EXTENSION_DOWNLOAD_URL
 from ..db import (
     get_user_data,
     save_nick,
@@ -115,7 +115,6 @@ async def cmd_setsteam(message: types.Message):
 # Поэтому бот работает с матчем через расширение: расширение сидит на faceit.com,
 # само видит идущий матч (в сессии браузера) и шлёт его на Worker. /facelogin
 # выдаёт link_token — он связывает расширение с конкретным пользователем бота.
-EXTENSION_DOWNLOAD_URL = "https://github.com/caddend/faceit-bot/raw/main/extension.zip"
 
 
 @dp.message(Command("facelogin"))

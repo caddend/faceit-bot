@@ -64,6 +64,12 @@ cursor.execute('''
         message_id INTEGER
     )
 ''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS bot_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+''')
 conn.commit()
 
 
@@ -315,3 +321,27 @@ def get_all_link_tokens():
         "WHERE nickname IS NOT NULL AND link_token IS NOT NULL"
     )
     return cursor.fetchall()
+
+
+def get_meta(key: str, default: str = "") -> str:
+    """Читает значение из key-value таблицы bot_meta."""
+    cursor.execute("SELECT value FROM bot_meta WHERE key = ?", (key,))
+    row = cursor.fetchone()
+    return row[0] if row else default
+
+
+def set_meta(key: str, value: str):
+    """Записывает/обновляет значение в bot_meta (upsert)."""
+    cursor.execute(
+        "INSERT INTO bot_meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value)
+    )
+    conn.commit()
+
+
+def get_all_user_ids_with_nick():
+    """Для рассылки уведомлений: (user_id,) всех, у кого привязан ник.
+    Фильтр по никнейму — чтобы не спамить тех, кто просто открыл /start."""
+    cursor.execute("SELECT user_id FROM users WHERE nickname IS NOT NULL")
+    return [row[0] for row in cursor.fetchall()]

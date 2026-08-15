@@ -43,6 +43,12 @@ CS2_APP_ID = 730
 WEBAPP_URL = ""  # пусто — кнопки мини-приложения нет
 WEBAPP_AUTH_SECRET = "YOUR_WORKER_AUTH_SECRET"
 
+# Telegram user_id администраторов (могут /announce). Узнать свой: @userinfobot.
+ADMIN_IDS = []
+
+# URL скачивания расширения (raw-ссылка на zip в репозитории).
+EXTENSION_DOWNLOAD_URL = "https://github.com/caddend/faceit-bot/raw/main/extension.zip"
+
 
 def create_bot() -> Bot:
     session = AiohttpSession(api=TelegramAPIServer.from_base(CUSTOM_API_URL))
