@@ -332,6 +332,15 @@ def get_all_link_tokens():
     return cursor.fetchall()
 
 
+def get_all_for_sync():
+    """Для sync_users_on_startup: (user_id, nickname, link_token) всех с ником.
+    link_token может быть None — тогда Worker просто не получит ключ link_token."""
+    cursor.execute(
+        "SELECT user_id, nickname, link_token FROM users WHERE nickname IS NOT NULL"
+    )
+    return cursor.fetchall()
+
+
 def get_meta(key: str, default: str = "") -> str:
     """Читает значение из key-value таблицы bot_meta."""
     cursor.execute("SELECT value FROM bot_meta WHERE key = ?", (key,))

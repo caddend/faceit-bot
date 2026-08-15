@@ -191,6 +191,10 @@ async def cmd_facelogin(message: types.Message):
         return
 
     link_token = create_link_token(user_id)
+    # Пушим link_token в Worker, чтобы мини-приложение могло тянуть scrape-данные
+    user_data = get_user_data(user_id)
+    if user_data and user_data[0]:
+        await push_user_to_worker(user_id, user_data[0], link_token)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="Скачать расширение", url=EXTENSION_DOWNLOAD_URL)

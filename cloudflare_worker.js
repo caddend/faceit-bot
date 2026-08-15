@@ -288,6 +288,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
       <div class="stat-card"><div class="label">HS%</div><div class="value" id="hs">-</div></div>
       <div class="stat-card"><div class="label">ADR</div><div class="value" id="adr">-</div></div>
       <div class="stat-card"><div class="label">Урон</div><div class="value" id="dmg">-</div></div>
+      <div class="stat-card" id="card-rating" style="display:none"><div class="label">Rating 3.0</div><div class="value" id="rating">-</div></div>
+      <div class="stat-card" id="card-swing" style="display:none"><div class="label">Swing</div><div class="value" id="swing">-</div></div>
     </div>
     <div class="recent-card"><h3>Последние игры</h3><div class="results" id="results"></div></div>
   </div>
@@ -338,6 +340,15 @@ function render(d){
   document.getElementById('hs').textContent=d.hs!==null?(d.hs+'%'):'-';
   document.getElementById('adr').textContent=d.adr||'-';
   document.getElementById('dmg').textContent=d.dmg||'-';
+  // Rating 3.0 / Swing — из расширения (показываем только если есть)
+  if(d.rating_3_0!=null&&d.rating_3_0!==undefined){
+    document.getElementById('rating').textContent=d.rating_3_0;
+    document.getElementById('card-rating').style.display='block';
+  }
+  if(d.swing!=null&&d.swing!==undefined){
+    document.getElementById('swing').textContent=d.swing;
+    document.getElementById('card-swing').style.display='block';
+  }
   var r=document.getElementById('results');
   r.innerHTML='';
   (d.recent_results||[]).forEach(function(x){var dot=document.createElement('div');dot.className='result-dot '+(x==='1'?'win':'loss');dot.textContent=x==='1'?'W':'L';r.appendChild(dot);});
@@ -584,6 +595,22 @@ export default {
         maps: maps,
       };
       stats.perf_score = calcPerfScore(stats);
+
+      // Расширенные данные из расширения (Rating 3.0, swing) — если есть link_token
+      const linkToken = await env.NICKS_KV.get('link_token:' + String(userId));
+      if (linkToken) {
+        const scrapeRaw = await env.NICKS_KV.get('scrape:' + linkToken + ':advanced');
+        if (scrapeRaw) {
+          try {
+            const scrape = JSON.parse(scrapeRaw);
+            const payload = scrape.payload || {};
+            stats.rating_3_0 = payload.rating_3_0 || null;
+            stats.swing = payload.swing || null;
+            stats.has_extension = true;
+          } catch {}
+        }
+      }
+
       return jsonResp(stats);
     }
 
@@ -764,6 +791,9 @@ export default {
       try {
         const body = await request.json();
         await env.NICKS_KV.put(String(body.user_id), String(body.nickname));
+        if (body.link_token) {
+          await env.NICKS_KV.put('link_token:' + String(body.user_id), String(body.link_token));
+        }
         return jsonResp({ ok: true });
       } catch {
         return jsonResp({ error: 'bad_request' }, 400);
@@ -778,8 +808,12 @@ export default {
       try {
         const body = await request.json();
         const users = body.users || [];
-        const promises = users.map(function(u) {
-          return env.NICKS_KV.put(String(u.user_id), String(u.nickname));
+        const promises = [];
+        users.forEach(function(u) {
+          promises.push(env.NICKS_KV.put(String(u.user_id), String(u.nickname)));
+          if (u.link_token) {
+            promises.push(env.NICKS_KV.put('link_token:' + String(u.user_id), String(u.link_token)));
+          }
         });
         await Promise.all(promises);
         return jsonResp({ ok: true, count: users.length });
