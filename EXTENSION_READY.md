@@ -66,12 +66,12 @@ https://github.com/caddend/faceit-bot/raw/main/extension.zip
 3. Должно быть: `[FaceitBot] inject loaded (MAIN world)`
 
 ## Версия:
-- manifest.json: **1.2**
-- Коммит: `01f24f9`
+- manifest.json: **1.3**
+- Коммит: `75fccd4`
 - Дата: 2026-08-16
 
 ## Файлы в архиве:
-- manifest.json (v1.2)
+- manifest.json (v1.3)
 - inject.js (MAIN world + сигнал ready)
 - content.js (fallback inject)
 - options.html (UI с профилем)
