@@ -853,6 +853,43 @@ export default {
       return jsonResp({ error: 'method_not_allowed' }, 405);
     }
 
+    // ===== /api/scrape-data (NEW) — расширенная статистика из расширения =====
+    // Auth: link_token в теле (POST) или X-Auth-Secret (GET).
+    // KV key: scrape:{link_token}:{type}, TTL 3600s (1 час).
+    if (url.pathname === '/api/scrape-data') {
+      const linkToken = url.searchParams.get('link_token');
+      const type = url.searchParams.get('type') || 'advanced';
+      if (!linkToken) {
+        return jsonResp({ error: 'bad_request', message: 'link_token query required' }, 400);
+      }
+      const key = 'scrape:' + linkToken + ':' + type;
+
+      if (request.method === 'POST') {
+        let body;
+        try { body = await request.json(); } catch { return jsonResp({ error: 'bad_request' }, 400); }
+        const lt = body && body.link_token;
+        const payload = body && body.payload;
+        if (!lt || !payload) {
+          return jsonResp({ error: 'bad_request', message: 'link_token and payload required' }, 400);
+        }
+        const k = 'scrape:' + lt + ':' + (body.type || 'advanced');
+        // TTL 3600s — данные свежие, пока страница открыта; устареют — AI скажет открыть профиль.
+        await env.NICKS_KV.put(k, JSON.stringify({ payload, timestamp: Math.floor(Date.now()/1000) }), { expirationTtl: 3600 });
+        return jsonResp({ ok: true });
+      }
+
+      if (request.method === 'GET') {
+        if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+          return jsonResp({ error: 'unauthorized' }, 403);
+        }
+        const raw = await env.NICKS_KV.get(key);
+        if (!raw) return jsonResp({ error: 'no_data', message: 'Скрап-данные отсутствуют. Попросите пользователя открыть профиль на faceit.com.' }, 404);
+        return jsonResp(JSON.parse(raw));
+      }
+
+      return jsonResp({ error: 'method_not_allowed' }, 405);
+    }
+
     return jsonResp({ error: 'not_found' }, 404);
   },
 };

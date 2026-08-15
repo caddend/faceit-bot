@@ -5,13 +5,13 @@
 
 Возвращают компактный текст для передачи обратно в ИИ.
 """
-from .config import FACEIT_API_BASE
+from .config import FACEIT_API_BASE, WEBAPP_URL, WEBAPP_AUTH_SECRET
 from .faceit_api import (
     get_player_by_nickname,
     fetch_faceit_data,
     _match_result_for_player,
 )
-from .db import get_elo_history, get_user_data
+from .db import get_elo_history, get_user_data, get_link_token
 
 
 async def fetch_stats_summary(nickname: str) -> str:
@@ -201,3 +201,59 @@ async def fetch_elo_summary(nickname: str, user_id: int) -> str:
         f"Текущий ELO: {current_elo}\n"
         f"История пока не накоплена ботом (нужно несколько матчей для трека)."
     )
+
+
+async def fetch_advanced_stats(nickname: str, user_id: int) -> str:
+    """Расширенные данные, которых нет в публичном API: Faceit Rating 3.0, swing,
+    детальный ELO. Доступно через расширение (Worker KV scrape:{link_token}:advanced).
+
+    Если у пользователя нет link_token или данные устарели/отсутствуют —
+    возвращает инструкцию попросить пользователя открыть профиль на faceit.com.
+    """
+    if not WEBAPP_URL:
+        return "Расширенные данные недоступны (Worker не настроен)."
+
+    # link_token нужен только если запрашивают свою статистику (self) —
+    # расширенные данные привязаны к сессии браузера конкретного пользователя.
+    user_data = get_user_data(user_id)
+    is_self = bool(user_data and user_data[0] and user_data[0].lower() == nickname.lower())
+    if not is_self:
+        return (
+            f"Расширенные данные (Rating 3.0, swing) доступны только для своего "
+            f"профиля через расширение. Для '{nickname}' их получить нельзя."
+        )
+
+    link_token = get_link_token(user_id)
+    if not link_token:
+        return (
+            "Расширенные данные недоступны: расширение не привязано. "
+            "Попроси пользователя установить расширение через /facelogin."
+        )
+
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{WEBAPP_URL}/api/scrape-data?link_token={link_token}&type=advanced",
+                headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
+                timeout=10,
+            ) as resp:
+                if resp.status != 200:
+                    return "Расширенные данные недоступны. Попроси пользователя открыть профиль на faceit.com."
+                data = await resp.json()
+                if not data or not data.get("payload"):
+                    return "Расширенные данные пока не собраны. Попроси пользователя открыть свой профиль на faceit.com."
+                payload = data["payload"]
+                rating = payload.get("rating_3_0", "N/A")
+                swing = payload.get("swing", "N/A")
+                ts = payload.get("timestamp", 0)
+                import time
+                age = int(time.time() - ts) if ts else 0
+                age_str = f"{age} сек назад" if ts else "давно"
+                return (
+                    f"Расширенные данные {nickname} (из расширения, {age_str}):\n"
+                    f"Faceit Rating 3.0: {rating}\n"
+                    f"Swing: {swing}"
+                )
+    except Exception as e:
+        return f"Ошибка получения расширенных данных: {str(e)}"

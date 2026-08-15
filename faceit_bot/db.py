@@ -70,6 +70,15 @@ cursor.execute('''
         value TEXT
     )
 ''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        content TEXT,
+        ts INTEGER
+    )
+''')
 conn.commit()
 
 
@@ -345,3 +354,42 @@ def get_all_user_ids_with_nick():
     Фильтр по никнейму — чтобы не спамить тех, кто просто открыл /start."""
     cursor.execute("SELECT user_id FROM users WHERE nickname IS NOT NULL")
     return [row[0] for row in cursor.fetchall()]
+
+
+def save_chat_message(user_id: int, role: str, content: str):
+    """Сохраняет сообщение в историю чата с ИИ (multi-turn контекст)."""
+    cursor.execute(
+        "INSERT INTO chat_history (user_id, role, content, ts) VALUES (?, ?, ?, ?)",
+        (user_id, role, content, int(time.time()))
+    )
+    conn.commit()
+
+
+def get_chat_history(user_id: int, limit: int = 20):
+    """Возвращает последние N сообщений oldest-first: [{role, content}, ...]."""
+    cursor.execute(
+        "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+        (user_id, limit)
+    )
+    rows = cursor.fetchall()
+    return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+
+
+def clear_chat_history(user_id: int):
+    """Очищает историю чата с ИИ для пользователя (/clear)."""
+    cursor.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+    conn.commit()
+
+
+def has_link_token(user_id: int) -> bool:
+    """True если у пользователя есть link_token (расширение привязано)."""
+    cursor.execute("SELECT link_token FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return bool(row and row[0])
+
+
+def get_link_token(user_id: int) -> str | None:
+    """Возвращает link_token пользователя или None."""
+    cursor.execute("SELECT link_token FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None

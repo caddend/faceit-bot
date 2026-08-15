@@ -25,6 +25,8 @@ from ..db import (
     get_unique_nicknames_with_counts,
     schedule_delete,
     create_link_token,
+    has_link_token,
+    clear_chat_history,
 )
 from ..dashboard import (
     delete_user_message,
@@ -35,7 +37,7 @@ from ..dashboard import (
 from ..faceit_api import get_player_by_nickname, fetch_faceit_data
 from ..steam_api import resolve_steam_id
 from ..webapp_sync import push_user_to_worker
-from ..menu import menu_root_text, main_menu_keyboard
+from ..menu import menu_root_text, main_menu_keyboard, menu_ext_text
 from ..formatting import section, kv, table
 
 
@@ -44,7 +46,60 @@ async def cmd_start(message: types.Message):
     await delete_user_message(message)
     user_id = message.from_user.id
     await clear_dashboard(user_id)
+
+    user_data = get_user_data(user_id)
+    has_nick = bool(user_data and user_data[0])
+
+    # Онбординг: нет ника → пошаговый гайд для новичков
+    if not has_nick:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="📱 Установить расширение", callback_data="menu:ext")
+        builder.button(text="🧠 ИИ-тренер", callback_data="menu:ai")
+        builder.adjust(1)
+        sent = await message.answer(
+            f"{section('ДОБРО ПОЖАЛОВАТЬ')}\n\n"
+            f"Я — бот-трекер CS2 на Faceit: статистика, матчи, ELO, ИИ-анализ.\n\n"
+            f"<b>С чего начать:</b>\n"
+            f"1. Привяжи никнейм: <code>/setnick твой_ник</code>\n"
+            f"2. Установи расширение (видит текущие матчи): кнопка ниже\n"
+            f"3. Включи ИИ-тренера — план тренировок, разбор статистики\n\n"
+            f"Все команды — в меню кнопок ниже.",
+            reply_markup=builder.as_markup(),
+            disable_web_page_preview=True,
+        )
+        await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+        return
+
+    # Есть ник, но нет расширения → предложить установку + обычное меню
+    if not has_link_token(user_id):
+        builder = InlineKeyboardBuilder()
+        builder.button(text="📊 Статистика", callback_data="menu:stats")
+        builder.button(text="🎯 Матчи", callback_data="menu:matches")
+        builder.button(text="🧠 ИИ-тренер", callback_data="menu:ai")
+        builder.button(text="⚙️ Настройки", callback_data="menu:settings")
+        builder.button(text="📱 Установить расширение", callback_data="menu:ext")
+        builder.adjust(2)
+        sent = await message.answer(
+            f"{menu_root_text()}\n\n"
+            f"💡 <i>Привет! Расширение ещё не установлено — с ним бот видит "
+            f"текущие матчи и Rating 3.0. Установить:</i>",
+            reply_markup=builder.as_markup(),
+        )
+        await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+        return
+
+    # Всё настроено → обычное меню
     sent = await message.answer(menu_root_text(), reply_markup=main_menu_keyboard())
+    await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+
+
+@dp.message(Command("clear"))
+async def cmd_clear(message: types.Message):
+    """Очищает историю чата с ИИ (сбрасывает multi-turn контекст)."""
+    await delete_user_message(message)
+    user_id = message.from_user.id
+    clear_chat_history(user_id)
+    sent = await message.answer("🧹 История чата с ИИ очищена. Контекст сброшен.")
     await replace_dashboard(user_id, sent.chat.id, sent.message_id)
 
 

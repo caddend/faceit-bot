@@ -1,12 +1,18 @@
-// Inject-скрипт (main world, страница). Перехватывает fetch/XHR к api.faceit.com,
-// ловит ответ /match/v2/matches (идущий матч) и шлёт его content script'у.
+// Inject-скрипт (main world). Перехватывает fetch/XHR к api.faceit.com:
+//  - /match/v2/matches → идущий матч (составы команд)
+//  - любые ответы со статистикой (Rating 3.0, swing, elo-история) → scrape-данные
 
 (function () {
   const MATCH_RE = /api\.faceit\.com\/match\/v2\/matches/;
+  // Паттерны ответов со статистикой, которых нет в публичном Data API v4.
+  const STATS_RES = [
+    /api\.faceit\.com\/stats\//,            // stats/v1/...
+    /api\.faceit\.com\/match\/v2\/.*\/rating/, // rating матча
+    /api\.faceit\.com\/players\/.*\/elo/,      // elo-история
+  ];
 
   function normalizeMatch(raw) {
     if (!raw) return null;
-    // Ответ может быть массивом (payload: [...]) или одним объектом
     let item = null;
     if (Array.isArray(raw)) {
       item = raw[0];
@@ -18,8 +24,6 @@
       item = raw;
     }
     if (!item) return null;
-
-    // Не интересуют завершённые/отменённые
     const status = (item.status || "").toLowerCase();
     if (status === "finished" || status === "cancelled" || status === "aborted") return null;
 
@@ -60,13 +64,64 @@
     window.postMessage({ __faceit_bot: true, match }, "*");
   }
 
+  // Извлекаем интересующие поля из произвольного ответа статистики.
+  // Глубокий поиск по ключам — чтобы не зависеть от точной структуры.
+  function extractStats(data) {
+    if (!data) return null;
+    const out = {};
+
+    function walk(obj) {
+      if (!obj || typeof obj !== "object") return;
+      for (const [k, v] of Object.entries(obj)) {
+        const kl = k.toLowerCase();
+        if (kl.includes("rating") && (kl.includes("3") || kl.includes("faceit"))) {
+          if (typeof v === "number" || (typeof v === "string" && v)) out.rating_3_0 = v;
+        }
+        if (kl === "swing" || (kl.includes("swing") && !kl.includes("ing"))) {
+          if (typeof v === "number" || (typeof v === "string" && v)) out.swing = v;
+        }
+        // elo-история: массив точек {elo, ...} или {value, ts}
+        if ((kl === "elo" || kl === "faceit_elo") && Array.isArray(v)) {
+          out.elo_history = v.map(function (p) {
+            return (p && (p.elo || p.value || p.Elo)) || null;
+          }).filter(function (x) { return x !== null; });
+        }
+        if (v && typeof v === "object") walk(v);
+      }
+    }
+    walk(data);
+
+    if (!out.rating_3_0 && !out.swing && !out.elo_history) return null;
+    out.timestamp = Date.now();
+    return out;
+  }
+
+  function sendStats(payload) {
+    if (!payload) return;
+    window.postMessage({ __faceit_bot_stats: true, type: "advanced", payload }, "*");
+  }
+
   function handleResponse(url, body) {
-    if (!MATCH_RE.test(url)) return;
+    if (!body) return;
     try {
       const data = typeof body === "string" ? JSON.parse(body) : body;
-      const match = normalizeMatch(data);
-      sendMatch(match);
+      if (MATCH_RE.test(url)) {
+        sendMatch(normalizeMatch(data));
+      }
+      // Скрап статистики: если в ответе есть нужные поля
+      for (const re of STATS_RES) {
+        if (re.test(url)) {
+          sendStats(extractStats(data));
+          break;
+        }
+      }
     } catch (e) {}
+  }
+
+  function shouldIntercept(urlStr) {
+    if (MATCH_RE.test(urlStr)) return true;
+    for (const re of STATS_RES) { if (re.test(urlStr)) return true; }
+    return false;
   }
 
   // --- fetch ---
@@ -75,7 +130,7 @@
     const url = arguments[0];
     const urlStr = typeof url === "string" ? url : (url && url.url) || "";
     const p = origFetch.apply(this, arguments);
-    if (MATCH_RE.test(urlStr)) {
+    if (shouldIntercept(urlStr)) {
       p.then((resp) => resp.clone().text().then((t) => handleResponse(urlStr, t))).catch(() => {});
     }
     return p;
@@ -91,11 +146,9 @@
   XMLHttpRequest.prototype.send = function () {
     const self = this;
     const url = this.__fb_url || "";
-    if (MATCH_RE.test(url)) {
+    if (shouldIntercept(url)) {
       this.addEventListener("load", function () {
-        try {
-          handleResponse(url, self.responseText);
-        } catch (e) {}
+        try { handleResponse(url, self.responseText); } catch (e) {}
       });
     }
     return origSend.apply(this, arguments);

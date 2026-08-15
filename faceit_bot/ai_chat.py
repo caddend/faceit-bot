@@ -1,18 +1,18 @@
-﻿"""ИИ-консультант: краткие ответы на вопросы о CS2 + доступ к функциям бота.
+"""ИИ-ассистент по CS2/Faceit/боту — с multi-turn памятью.
 
-Используется когда пользователь в режиме ai_mode=1 (режим чата с ИИ).
-Отвечает только на вопросы, связанные с CS2/CS:GO. Ответы краткие (до 200 слов).
+Отвечает ТОЛЬКО на темы: CS2 (тактика/тренировки/статистика), платформа Faceit,
+команды этого бота. На всё остальное — короткий отказ. Помнит контекст последних
+N сообщений (хранится в БД chat_history). /clear сбрасывает контекст.
 
-Может вызывать функции бота (stats, last match, elo и т.д.) по запросу пользователя.
+Может вызывать инструменты бота (статистика, последний матч, ELO, расширенные
+данные из расширения) по запросу пользователя.
 """
 import asyncio
-import time
-import json
 
 from .config import ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL
-from .runtime import _api_cache
 from .coach import _sanitize_for_telegram
 from .balance import get_balance_footer
+from .db import get_chat_history, save_chat_message
 
 try:
     from anthropic import Anthropic
@@ -21,204 +21,181 @@ except ImportError:
     Anthropic = None
     _ANTHROPIC_AVAILABLE = False
 
-# TTL кеша для ИИ-чата: 5 минут (короче чем для полного анализа)
-AI_CHAT_CACHE_TTL = 300
+# Лимит истории сообщений (oldest-first). При превышении дропаем старые.
+HISTORY_LIMIT = 20
+# Лимит по длине истории, чтобы не разрастался контекст (символов).
+HISTORY_MAX_CHARS = 8000
+
+# Список команд бота для системного промпта (генерируется один раз при импорте).
+try:
+    from .menu import BOT_COMMANDS
+    _COMMANDS_LIST = "\n".join(f"/{c.command} — {c.description}" for c in BOT_COMMANDS)
+except Exception:
+    _COMMANDS_LIST = "(список недоступен)"
 
 
-# Определение доступных инструментов (tools) для ИИ
+# Доступные инструменты (tools) для ИИ
 TOOLS = [
     {
         "name": "get_player_stats",
-        "description": "Получает полную статистику игрока Faceit (K/D, винрейт, ELO, мультикиллы, клатчи и т.д.). Используй когда пользователь просит показать/посмотреть статистику.",
+        "description": "Полная статистика игрока Faceit (K/D, винрейт, ELO, мультикиллы, клатчи, энтри). Используй когда пользователь просит показать/посмотреть статистику.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "nickname": {
-                    "type": "string",
-                    "description": "Никнейм игрока Faceit (если пользователь не указал — используй 'self' для его собственной статистики)"
-                }
+                "nickname": {"type": "string", "description": "Никнейм Faceit (или 'self' для своей статистики)"}
             },
             "required": ["nickname"]
         }
     },
     {
         "name": "get_last_match",
-        "description": "Получает детали последнего матча игрока (карта, результат, K/D, скорборд). Используй когда пользователь просит показать последний матч/игру.",
+        "description": "Детали последнего матча (карта, результат, K/D, скорборд). Используй когда пользователь просит показать последний матч/игру.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "nickname": {
-                    "type": "string",
-                    "description": "Никнейм игрока Faceit (если пользователь не указал — используй 'self')"
-                }
+                "nickname": {"type": "string", "description": "Никнейм Faceit (или 'self')"}
             },
             "required": ["nickname"]
         }
     },
     {
         "name": "get_elo_dynamics",
-        "description": "Получает динамику ELO игрока за последние матчи. Используй когда пользователь спрашивает про изменение ELO или прогресс.",
+        "description": "Динамика ELO за последние матчи. Используй когда спрашивают про изменение ELO или прогресс.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "nickname": {
-                    "type": "string",
-                    "description": "Никнейм игрока Faceit (если пользователь не указал — используй 'self')"
-                }
+                "nickname": {"type": "string", "description": "Никнейм Faceit (или 'self')"}
             },
             "required": ["nickname"]
         }
-    }
+    },
+    {
+        "name": "get_advanced_stats",
+        "description": "Расширенные данные, которых нет в публичном API: Faceit Rating 3.0, swing, детальный ELO. Доступно только если у пользователя установлено расширение и он открывал профиль на faceit.com. Если данные устарели/отсутствуют — вернёт инструкцию для пользователя.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nickname": {"type": "string", "description": "Никнейм Faceit (или 'self')"}
+            },
+            "required": ["nickname"]
+        }
+    },
 ]
 
 
+def _build_system_prompt() -> str:
+    """Системный промпт: scoped ассистент по CS2/Faceit/боту."""
+    return (
+        "Ты — ИИ-ассистент по Counter-Strike 2, платформе Faceit и этому боту. "
+        "Помогаешь с тактикой, тренировками, анализом статистики, вопросами по Faceit "
+        "(ELO, уровни, матчмейкинг) и подсказываешь команды бота.\n\n"
+        "<b>Отказывай на всё остальное</b> одной фразой: "
+        "«Я отвечаю только по CS2/Faceit и этому боту.». "
+        "Не веди светские беседы, не пиши тексты, не помогай с другим софтом.\n\n"
+        "Ты можешь: составлять планы тренировок, разбрать статистику, помочь с командами бота, "
+        "ответить на вопросы про CS2/Faceit. Ответы конкретные и полезные, до 200 слов.\n\n"
+        "Используй инструменты ВСЕГДА, когда пользователь просит показать/посмотреть "
+        "статистику, матч, ELO или расширенные данные. Если никнейм не указан — 'self'.\n"
+        "После получения данных кратко прокомментируй (1-2 предложения), выдели главное через <b>...</b>.\n\n"
+        "Команды бота (подсказывай их когда уместно):\n"
+        f"{_COMMANDS_LIST}\n\n"
+        "Формат: HTML-теги <b>...</b> для акцентов. НЕ используй markdown (#, *, **, __). "
+        "Пиши на русском."
+    )
+
+
 async def _execute_tool(tool_name: str, tool_input: dict, user_id: int, functions_module) -> str:
-    """Выполняет вызов инструмента (функции бота) и возвращает результат в текстовом виде."""
+    """Выполняет вызов инструмента и возвращает результат текстом."""
     nickname = tool_input.get("nickname", "self")
 
-    # Если nickname == 'self' — берём из БД пользователя
     if nickname == "self":
         from .db import get_user_data
         user_data = get_user_data(user_id)
         if not user_data or not user_data[0]:
-            return "Ошибка: никнейм не привязан. Пользователь должен использовать /setnick сначала."
+            return "Ошибка: никнейм не привязан. Попроси пользователя сделать /setnick."
         nickname = user_data[0]
 
     try:
         if tool_name == "get_player_stats":
-            result = await functions_module.fetch_stats_summary(nickname)
-            return result or "Не удалось загрузить статистику."
-
+            return await functions_module.fetch_stats_summary(nickname) or "Не удалось загрузить статистику."
         elif tool_name == "get_last_match":
-            result = await functions_module.fetch_last_match_summary(nickname)
-            return result or "Не удалось загрузить последний матч."
-
+            return await functions_module.fetch_last_match_summary(nickname) or "Не удалось загрузить матч."
         elif tool_name == "get_elo_dynamics":
-            result = await functions_module.fetch_elo_summary(nickname, user_id)
-            return result or "Не удалось загрузить динамику ELO."
-
-        else:
-            return f"Неизвестный инструмент: {tool_name}"
-
+            return await functions_module.fetch_elo_summary(nickname, user_id) or "Не удалось загрузить ELO."
+        elif tool_name == "get_advanced_stats":
+            return await functions_module.fetch_advanced_stats(nickname, user_id) or "Расширенные данные недоступны."
+        return f"Неизвестный инструмент: {tool_name}"
     except Exception as e:
         return f"Ошибка при выполнении {tool_name}: {str(e)}"
 
 
-async def get_ai_chat_response(user_message: str, user_id: int, functions_module) -> str | None:
-    """Получает краткий ответ от ИИ на вопрос пользователя с возможностью вызова функций бота.
+def _trim_history(history: list) -> list:
+    """Обрезает историю снизу, если суммарная длина превышает лимит символов."""
+    total = sum(len(m["content"]) for m in history)
+    while total > HISTORY_MAX_CHARS and len(history) > 2:
+        removed = history.pop(0)
+        total -= len(removed["content"])
+    return history
 
-    Кеш: последние 5 минут по ключу chat:{user_id}:{hash(message)}.
-    Ограничения:
-    - Только вопросы о CS2/CS:GO
-    - Краткие ответы (~100-200 слов)
-    - max_tokens=512 (с учётом tool use)
+
+async def get_ai_chat_response(user_message: str, user_id: int, functions_module) -> str | None:
+    """Multi-turn ответ ИИ с памятью контекста (chat_history в БД).
+
+    1. Грузит последние HISTORY_LIMIT сообщений.
+    2. Добавляет новый user-message.
+    3. Шлёт в API (с tools). При tool_use — второй запрос с результатами.
+    4. Сохраняет user + assistant сообщения в историю.
     """
     if not _ANTHROPIC_AVAILABLE or not Anthropic:
         return None
 
-    # Кеш по хешу сообщения (для повторных одинаковых вопросов)
-    cache_key = f"chat:{user_id}:{hash(user_message)}"
-    cached = _api_cache.get(cache_key)
-    if cached and (time.time() - cached[0]) < AI_CHAT_CACHE_TTL:
-        return cached[1] + await get_balance_footer()
+    history = _trim_history(get_chat_history(user_id, HISTORY_LIMIT))
+    system_prompt = _build_system_prompt()
 
-    system_prompt = (
-        "Ты — краткий CS2 консультант с доступом к статистике игроков через Faceit API. "
-        "Отвечай ТОЛЬКО на вопросы о Counter-Strike 2 и CS:GO. "
-        "Если вопрос не связан с CS2/CS:GO — вежливо откажи и напомни, что ты специализируешься только на CS2. "
-        "\n\n"
-        "У тебя есть инструменты для получения реальной статистики:\n"
-        "- get_player_stats: полная статистика игрока (K/D, винрейт, ELO, клатчи, энтри и т.д.)\n"
-        "- get_last_match: последний матч игрока (карта, результат, K/D, скорборд)\n"
-        "- get_elo_dynamics: динамика ELO за последние матчи\n"
-        "\n"
-        "Используй эти инструменты ВСЕГДА, когда пользователь просит показать/посмотреть статистику, "
-        "последний матч, ELO или что-то связанное с его данными. "
-        "Если пользователь не указал никнейм — используй 'self' в параметре nickname.\n"
-        "\n"
-        "После получения данных — кратко прокомментируй их (1-2 предложения), "
-        "выдели ключевые моменты через <b>...</b>.\n"
-        "\n"
-        "Ответы должны быть краткими (до 150 слов), конкретными и полезными. "
-        "Используй HTML-теги <b>...</b> для акцентов. "
-        "НЕ используй markdown (#, ##, *, **, __). "
-        "Пиши на русском языке."
-    )
-
-    def _call_api():
+    def _call_api(messages):
         client = Anthropic(api_key=ANTHROPIC_AUTH_TOKEN, base_url=ANTHROPIC_BASE_URL)
-
-        messages = [{"role": "user", "content": user_message}]
-
-        # Первый запрос к API (с tools)
-        resp = client.messages.create(
+        return client.messages.create(
             model=ANTHROPIC_MODEL,
-            max_tokens=512,
+            max_tokens=1024,
             system=system_prompt,
             tools=TOOLS,
             messages=messages,
         )
 
-        return resp
+    # messages для первого запроса: история + новое сообщение
+    messages = history + [{"role": "user", "content": user_message}]
 
     try:
-        response = await asyncio.to_thread(_call_api)
+        response = await asyncio.to_thread(_call_api, messages)
     except Exception as e:
         return f"Ошибка ИИ: {str(e)}"
 
-    # Обрабатываем ответ (может быть text или tool_use)
     final_text = ""
 
-    # Проверяем stop_reason
     if response.stop_reason == "tool_use":
-        # ИИ хочет вызвать инструмент
         tool_results = []
-
         for block in response.content:
             if block.type == "tool_use":
-                tool_name = block.name
-                tool_input = block.input
-                tool_use_id = block.id
-
-                # Выполняем инструмент
-                tool_result_text = await _execute_tool(tool_name, tool_input, user_id, functions_module)
-
+                tool_result_text = await _execute_tool(block.name, block.input, user_id, functions_module)
                 tool_results.append({
                     "type": "tool_result",
-                    "tool_use_id": tool_use_id,
+                    "tool_use_id": block.id,
                     "content": tool_result_text,
                 })
 
-        # Второй запрос к API с результатами tool_use
-        def _call_api_with_tool_results():
-            client = Anthropic(api_key=ANTHROPIC_AUTH_TOKEN, base_url=ANTHROPIC_BASE_URL)
-
-            messages = [
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": response.content},
-                {"role": "user", "content": tool_results},
-            ]
-
-            resp2 = client.messages.create(
-                model=ANTHROPIC_MODEL,
-                max_tokens=512,
-                system=system_prompt,
-                tools=TOOLS,
-                messages=messages,
-            )
-            return resp2
-
+        # Второй запрос: история + user + assistant(tool_use) + tool_results
+        messages2 = messages + [
+            {"role": "assistant", "content": response.content},
+            {"role": "user", "content": tool_results},
+        ]
         try:
-            response2 = await asyncio.to_thread(_call_api_with_tool_results)
-            # Извлекаем текстовый ответ
+            response2 = await asyncio.to_thread(_call_api, messages2)
             for block in response2.content:
                 if block.type == "text":
                     final_text += block.text
         except Exception as e:
-            return f"Ошибка при обработке результатов инструмента: {str(e)}"
-
+            return f"Ошибка при обработке инструментов: {str(e)}"
     else:
-        # Обычный текстовый ответ без инструментов
         for block in response.content:
             if block.type == "text":
                 final_text += block.text
@@ -228,8 +205,8 @@ async def get_ai_chat_response(user_message: str, user_id: int, functions_module
 
     final_text = _sanitize_for_telegram(final_text)
 
-    # Кешируем на 5 минут
-    # Кешируем на 5 минут
-    _api_cache[cache_key] = (time.time(), final_text)
-    return final_text + await get_balance_footer()
+    # Сохраняем контекст в историю (user-вопрос + ответ ассистента)
+    save_chat_message(user_id, "user", user_message)
+    save_chat_message(user_id, "assistant", final_text)
 
+    return final_text + await get_balance_footer()
