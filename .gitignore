@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# База данных (содержит токены пользователей!)
+users.db
+*.db-journal
+
+# Секреты — config.py с реальными токенами НЕ коммитим
+faceit_bot/config.py
+.env
+
+# Claude / IDE
+.claude/
+.idea/
+.vscode/
+*.swp
+
+# Сборки
+extension.zip
+build/
+dist/

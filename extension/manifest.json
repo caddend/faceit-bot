@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Faceit Token Helper for Bot",
+  "version": "1.0",
+  "description": "Перехватывает Bearer-токен Faceit и отправляет его в Telegram-бота.",
+  "permissions": ["webRequest", "storage"],
+  "host_permissions": [
+    "https://www.faceit.com/*",
+    "https://api.faceit.com/*"
+  ],
+  "action": {
+    "default_title": "Отправить токен Faceit в бота",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["prompt.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -1,0 +1,1 @@
+# Faceit Bot package marker.
