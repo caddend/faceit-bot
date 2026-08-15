@@ -42,7 +42,7 @@ from ..steam_api import (
     get_cs2_lifetime_stats,
     get_steam_id_from_faceit,
 )
-from ..charts import render_compare_chart, render_map_chart, render_stats_image
+from ..charts import render_compare_chart, render_map_chart
 from ..coach import get_coach_analysis
 from ..ai_chat import get_ai_chat_response
 from ..formatting import section, kv, table
@@ -101,28 +101,9 @@ async def cmd_stats(message: types.Message):
             steam_block = "\n\n<i>Steam профиль приватный или статистика недоступна.</i>"
 
     # Пробуем нарисовать расширенную картинку
-    chart_bytes = render_stats_image(stats_data, player_data, nickname)
+    chart_bytes = None  # текстовый режим
 
-    if chart_bytes:
-        # Caption: профиль + Steam блок
-        caption = (
-            f"{section('ПРОФИЛЬ: ' + nickname)}\n"
-            f"{kv('Уровень', lvl)}   {kv('ELO', elo)}\n"
-            f"{kv('Регион', country)}\n"
-            f"{kv('Последние 5 игр', recent_str)}"
-            f"{steam_block}"
-        )
-        photo = types.BufferedInputFile(chart_bytes, filename="stats.png")
-        builder = InlineKeyboardBuilder()
-        builder.button(text="ИИ-анализ", callback_data=f"coach:{user_id}")
-        markup = builder.as_markup()
-        sent = await bot.send_photo(
-            chat_id=message.chat.id, photo=photo, caption=caption, reply_markup=markup
-        )
-        await replace_dashboard(user_id, sent.chat.id, sent.message_id)
-        return
-
-    # --- Fallback на текст ---
+    # --- Текстовый режим ---
     matches = lifetime.get('Matches', 'N/A')
     wins = lifetime.get('Wins', 'N/A')
     winrate = lifetime.get('Win Rate %', 'N/A')
@@ -218,8 +199,46 @@ async def cmd_stats(message: types.Message):
         f"{maps_block}"
         f"{steam_block}"
     )
-    sent = await message.answer(text)
-    await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+
+    # Telegram limit 4096. Если текст длиннее — разбиваем по строкам на 2 сообщения.
+    chunks = _split_text(text, 4000)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="ИИ-анализ", callback_data=f"coach:{user_id}")
+    markup = builder.as_markup()
+
+    last_msg = None
+    for i, chunk in enumerate(chunks):
+        # Кнопку ИИ-анализа клеим только на последнее сообщение
+        sent = await message.answer(chunk, reply_markup=markup if i == len(chunks) - 1 else None)
+        last_msg = sent
+        await asyncio.sleep(0.05)
+    await replace_dashboard(user_id, last_msg.chat.id, last_msg.message_id)
+
+
+def _split_text(text: str, limit: int = 4000) -> list[str]:
+    """Разбивает длинный текст на части до limit символов по границам строк.
+    Если отдельная строка длиннее limit — режем её жёстко."""
+    if len(text) <= limit:
+        return [text]
+    parts = text.split("\n")
+    chunks = []
+    current = ""
+    for part in parts:
+        # Если сама строка длиннее лимита — режем её на куски
+        while len(part) > limit:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(part[:limit])
+            part = part[limit:]
+        if len(current) + len(part) + 1 > limit and current:
+            chunks.append(current)
+            current = part
+        else:
+            current = current + "\n" + part if current else part
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _build_steam_block(stats: dict, steam_id: str) -> str:

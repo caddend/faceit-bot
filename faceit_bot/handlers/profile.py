@@ -8,7 +8,7 @@ from aiogram import types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from ..runtime import dp
+from ..runtime import dp, bot
 from ..config import FACEIT_API_BASE, EXTENSION_DOWNLOAD_URL
 from ..db import (
     get_user_data,
@@ -95,12 +95,34 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("clear"))
 async def cmd_clear(message: types.Message):
-    """Очищает историю чата с ИИ (сбрасывает multi-turn контекст)."""
-    await delete_user_message(message)
+    """Очищает историю чата: удаляет последние ~40 сообщений бота + контекст ИИ.
+
+    Telegram API не даёт удалить всю переписку разом — удаляем по message_id
+    в обратном порядке. message_id в чате монотонно растут, поэтому идём назад
+    от текущего и пробуем удалить. Чужие/старые пропускаются.
+    """
     user_id = message.from_user.id
     clear_chat_history(user_id)
-    sent = await message.answer("История чата с ИИ очищена. Контекст сброшен.")
-    await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+
+    chat_id = message.chat.id
+    current_msg_id = message.message_id
+    # Telegram не даёт удалить сообщения старше 48ч + только свои. Идём назад.
+    deleted = 0
+    for mid in range(current_msg_id, current_msg_id - 40, -1):
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=mid)
+            deleted += 1
+        except Exception:
+            pass  # сообщение чужое, слишком старое, или уже удалено
+
+    try:
+        sent = await bot.send_message(
+            chat_id=chat_id,
+            text="Чат очищен. Контекст ИИ сброшен.",
+        )
+        await replace_dashboard(user_id, sent.chat.id, sent.message_id)
+    except Exception:
+        pass
 
 
 @dp.message(Command("setnick"))
