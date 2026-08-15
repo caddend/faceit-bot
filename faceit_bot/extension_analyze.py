@@ -73,6 +73,8 @@ async def process_analyze_request(bot: Bot, session, key: str):
         target_nickname = request_data.get('target_nickname')
         faceit_session_token = request_data.get('faceit_session_token')
 
+        print(f"[ANALYZE] user_id={user_id}, nickname={target_nickname}, has_token={bool(faceit_session_token)}")
+
         if not user_id or not target_nickname:
             await delete_kv_key(session, key)
             return

@@ -32,14 +32,19 @@ async def get_ongoing_match(player_id: str, faceit_session_token: str = None) ->
 
     Возвращает dict матча или None.
     """
+    print(f"[get_ongoing_match] player_id={player_id}, has_token={bool(faceit_session_token)}")
+
     # --- Приоритет 1: браузерный API (api.faceit.com) ---
     if faceit_session_token:
         match = await _get_ongoing_match_browser(player_id, faceit_session_token)
+        print(f"[get_ongoing_match] Browser API result: {bool(match)}")
         if match:
             return match
 
     # --- Приоритет 2: Data API v4 (fallback) ---
-    return await _get_ongoing_match_data_api(player_id)
+    result = await _get_ongoing_match_data_api(player_id)
+    print(f"[get_ongoing_match] Data API result: {bool(result)}")
+    return result
 
 
 async def _get_ongoing_match_browser(player_id: str, session_token: str) -> dict | None:
@@ -64,7 +69,10 @@ async def _get_ongoing_match_browser(player_id: str, session_token: str) -> dict
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=12) as resp:
+                print(f"[Browser API] status={resp.status}, url={url}")
                 if resp.status != 200:
+                    print(f"[Browser API] Failed: {await resp.text()}")
+                    return None
                     return None
                 data = await resp.json()
                 # api.faceit.com возвращает {payload: [...]} или {items: [...]}
