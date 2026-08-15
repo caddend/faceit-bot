@@ -53,6 +53,19 @@
   </div>
 
   <p class="hint">Токен связывает расширение с твоим аккаунтом бота. После привязки открой любой профиль на faceit.com — расширение начнёт собирать данные автоматически.</p>
+
+  <div style="margin-top:24px;padding-top:24px;border-top:1px solid #333">
+    <h2>Анализ чужого игрока</h2>
+    <p>Введи никнейм игрока на Faceit — ИИ проанализирует его текущий матч (состав команд + вердикт):</p>
+    <input id="player-nick" type="text" placeholder="nickname" autocomplete="off">
+    <button id="analyze">Анализировать матч</button>
+    <div class="ok" id="analyze-ok"></div>
+    <div class="error" id="analyze-error"></div>
+    <div class="status" id="analyze-status">
+      <div id="analyze-result">—</div>
+    </div>
+  </div>
+
   <script src="options.js"></script>
 </body>
 </html>

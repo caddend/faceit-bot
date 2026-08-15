@@ -12,6 +12,7 @@ from .tracker import background_match_tracker, scheduled_delete_worker, evening_
 from .webapp_sync import bulk_sync_to_worker
 from .db import get_all_tracked_users, get_all_for_sync
 from .menu import BOT_COMMANDS
+from .extension_analyze import poll_analyze_requests
 
 
 async def sync_users_on_startup():
@@ -39,6 +40,7 @@ async def main():
         scheduled_delete_worker(),
         evening_session_report(),
         extension_match_worker(),
+        poll_analyze_requests(bot),
     )
 
 

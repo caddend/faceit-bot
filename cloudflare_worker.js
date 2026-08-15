@@ -1012,6 +1012,84 @@ export default {
       return jsonResp({ error: 'method_not_allowed' }, 405);
     }
 
+    // ===== /api/analyze-player (NEW) — анализ чужого игрока =====
+    // Расширение шлёт {link_token, nickname} → Worker проверяет токен,
+    // находит активный матч игрока, отправляет в бот для ИИ-анализа.
+    if (url.pathname === '/api/analyze-player' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return jsonResp({ error: 'bad_request' }, 400); }
+      const linkToken = body && body.link_token;
+      const targetNickname = body && body.nickname;
+
+      if (!linkToken || !targetNickname) {
+        return jsonResp({ error: 'bad_request', message: 'link_token и nickname обязательны' }, 400);
+      }
+
+      // Проверяем что link_token валидный (существует в БД)
+      const verifyRaw = await env.NICKS_KV.get('verify:' + String(linkToken));
+      if (!verifyRaw) {
+        return jsonResp({ error: 'invalid_token', message: 'Токен не найден. Привяжи расширение через /facelogin' }, 403);
+      }
+
+      let verifyInfo;
+      try { verifyInfo = JSON.parse(verifyRaw); } catch { verifyInfo = {}; }
+      const userId = verifyInfo.user_id;
+      if (!userId) {
+        return jsonResp({ error: 'invalid_token' }, 403);
+      }
+
+      // Сохраняем запрос на анализ в KV → бот заберёт и обработает
+      const requestId = 'analyze_request:' + linkToken + ':' + Date.now();
+      await env.NICKS_KV.put(requestId, JSON.stringify({
+        user_id: userId,
+        target_nickname: targetNickname,
+        ts: Math.floor(Date.now() / 1000)
+      }), { expirationTtl: 600 }); // 10 минут TTL
+
+      return jsonResp({ ok: true, message: 'Запрос отправлен в бот. Результат придёт в Telegram.' });
+    }
+
+    // ===== /api/kv-list (NEW) — список ключей с префиксом (для бота) =====
+    if (url.pathname === '/api/kv-list' && request.method === 'GET') {
+      if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+        return jsonResp({ error: 'unauthorized' }, 403);
+      }
+      const prefix = url.searchParams.get('prefix') || '';
+      try {
+        const list = await env.NICKS_KV.list({ prefix: prefix });
+        return jsonResp({ keys: list.keys.map(k => k.name) });
+      } catch (e) {
+        return jsonResp({ error: 'list_failed', message: String(e) }, 500);
+      }
+    }
+
+    // ===== /api/kv-get (NEW) — получить значение по ключу (для бота) =====
+    if (url.pathname === '/api/kv-get' && request.method === 'GET') {
+      if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+        return jsonResp({ error: 'unauthorized' }, 403);
+      }
+      const key = url.searchParams.get('key');
+      if (!key) return jsonResp({ error: 'bad_request' }, 400);
+      const value = await env.NICKS_KV.get(key);
+      if (!value) return jsonResp({ error: 'not_found' }, 404);
+      try {
+        return jsonResp(JSON.parse(value));
+      } catch {
+        return jsonResp({ value: value });
+      }
+    }
+
+    // ===== /api/kv-delete (NEW) — удалить ключ (для бота) =====
+    if (url.pathname === '/api/kv-delete' && request.method === 'DELETE') {
+      if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+        return jsonResp({ error: 'unauthorized' }, 403);
+      }
+      const key = url.searchParams.get('key');
+      if (!key) return jsonResp({ error: 'bad_request' }, 400);
+      await env.NICKS_KV.delete(key);
+      return jsonResp({ ok: true });
+    }
+
     return jsonResp({ error: 'not_found' }, 404);
   },
 };

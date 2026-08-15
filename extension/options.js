@@ -93,3 +93,57 @@ $("save").addEventListener("click", async () => {
   $("save").disabled = false;
   $("save").textContent = "Сохранить";
 });
+
+// === Анализ чужого игрока ===
+$("analyze").addEventListener("click", async () => {
+  const nickname = $("player-nick").value.trim();
+  if (!nickname) {
+    $("analyze-error").textContent = "Введи никнейм игрока";
+    $("analyze-error").style.display = "block";
+    $("analyze-ok").style.display = "none";
+    return;
+  }
+
+  // Проверяем что есть link_token
+  const stored = await chrome.storage.local.get(STORAGE_KEY);
+  const token = stored[STORAGE_KEY];
+  if (!token) {
+    $("analyze-error").textContent = "Сначала привяжи токен выше";
+    $("analyze-error").style.display = "block";
+    $("analyze-ok").style.display = "none";
+    return;
+  }
+
+  $("analyze-ok").style.display = "none";
+  $("analyze-error").style.display = "none";
+  $("analyze").disabled = true;
+  $("analyze").textContent = "Анализ...";
+  $("analyze-status").classList.add("show");
+  $("analyze-result").innerHTML = '<span style="color:#ffa500">⏳ Ищу матч игрока...</span>';
+
+  try {
+    const resp = await fetch(`${WORKER_URL}/api/analyze-player`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link_token: token, nickname }),
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.ok) {
+      $("analyze-ok").textContent = "✓ Анализ отправлен в бота";
+      $("analyze-ok").style.display = "block";
+      $("analyze-result").innerHTML = `<span style="color:#3ddc84">✓ Результат отправлен в Telegram</span>`;
+    } else {
+      $("analyze-error").textContent = data.error || "Игрок не найден или нет активного матча";
+      $("analyze-error").style.display = "block";
+      $("analyze-result").innerHTML = `<span style="color:#ff6b6b">✗ ${data.error || "Ошибка"}</span>`;
+    }
+  } catch (e) {
+    $("analyze-error").textContent = `Ошибка сети: ${e.message}`;
+    $("analyze-error").style.display = "block";
+    $("analyze-result").innerHTML = `<span style="color:#ff6b6b">✗ Ошибка сети</span>`;
+  }
+
+  $("analyze").disabled = false;
+  $("analyze").textContent = "Анализировать матч";
+});
