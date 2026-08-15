@@ -66,12 +66,17 @@ https://github.com/caddend/faceit-bot/raw/main/extension.zip
 3. Должно быть: `[FaceitBot] inject loaded (MAIN world)`
 
 ## Версия:
-- manifest.json: **1.3**
-- Коммит: `75fccd4`
+- manifest.json: **1.4**
+- Коммит: (смотри git log)
 - Дата: 2026-08-16
 
+## Что нового в v1.4:
+- 🤖 Кнопка "🤖 Бот" теперь **всегда видна** (z-index: 2147483647)
+- ✅ Стили с `!important` — поверх любого интерфейса Faceit
+- ✅ Проверка `document.body` перед инжектом
+
 ## Файлы в архиве:
-- manifest.json (v1.3)
+- manifest.json (v1.4)
 - inject.js (MAIN world + сигнал ready)
 - content.js (fallback inject)
 - options.html (UI с профилем)
