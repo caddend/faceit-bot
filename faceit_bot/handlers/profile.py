@@ -6,12 +6,10 @@ import asyncio
 
 from aiogram import types, F
 from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..runtime import dp
-from ..config import FACEIT_API_BASE, FACEIT_BROWSER_API_BASE
+from ..config import FACEIT_API_BASE
 from ..db import (
     get_user_data,
     save_nick,
@@ -25,10 +23,8 @@ from ..db import (
     save_session,
     count_users,
     get_unique_nicknames_with_counts,
-    save_faceit_session_token,
-    get_faceit_session_token,
-    is_faceit_verified,
     schedule_delete,
+    create_link_token,
 )
 from ..dashboard import (
     delete_user_message,
@@ -114,152 +110,65 @@ async def cmd_setsteam(message: types.Message):
     await answer_and_track(message, f"SteamID <code>{steam_id}</code> привязан.")
 
 
-class FaceitLogin(StatesGroup):
-    waiting_for_token = State()
 
-
-# Faceit не отдаёт Bearer-токен ни через document.cookie, ни через Storage
-# (cookie переименована/HttpOnly). Самый простой способ — наше расширение: оно
-# само перехватывает заголовок Authorization из запросов к api.faceit.com,
-# копирует токен в буфер и открывает чат бота. Работает в Chrome/Firefox/Edge.
+# Faceit не отдаёт Bearer-токен ни через document.cookie, ни через Storage.
+# Поэтому бот работает с матчем через расширение: расширение сидит на faceit.com,
+# само видит идущий матч (в сессии браузера) и шлёт его на Worker. /facelogin
+# выдаёт link_token — он связывает расширение с конкретным пользователем бота.
+EXTENSION_DOWNLOAD_URL = "https://github.com/caddend/faceit-bot/raw/main/extension.zip"
 
 
 @dp.message(Command("facelogin"))
-async def cmd_facelogin(message: types.Message, state: FSMContext):
+async def cmd_facelogin(message: types.Message):
+    """Выдаёт link_token и инструкцию по установке расширения.
+
+    Расширение перехватывает идущий матч прямо из ответов api.faceit.com
+    и шлёт его на Worker. Бот забирает матч, делает ИИ-анализ и пишет пользователю.
+    Токен Faceit пользователю добывать не нужно вообще.
+    """
     await delete_user_message(message)
     user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
 
-    # Токен передан сразу — backward compatible (/facelogin <token>)
-    if len(args) >= 2:
-        await _process_faceit_token(message, user_id, args[1].strip(), state)
+    user_data = get_user_data(user_id)
+    if not user_data or not user_data[0]:
+        await answer_and_track(
+            message, "Сначала привяжи никнейм через /setnick — иначе матч не с чем связать."
+        )
         return
 
-    # Уже верифицирован
-    if is_faceit_verified(user_id):
-        await answer_and_track(message, "✅ Твой Faceit аккаунт уже верифицирован.")
-        return
-
-    # Входим в FSM-состояние «жду токен»
-    await state.set_state(FaceitLogin.waiting_for_token)
+    link_token = create_link_token(user_id)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="📦 Установить расширение", url="https://github.com/caddend/faceit-bot/raw/main/extension.zip")
-    builder.button(text="❌ Отмена", callback_data="facelogin_cancel")
+    builder.button(text="📦 Скачать расширение", url=EXTENSION_DOWNLOAD_URL)
     builder.adjust(1)
 
     sent = await message.answer(
-        "🔐 <b>Вход в Faceit аккаунт</b>\n\n"
-        "Токен Faceit спрятан (HttpOnly), поэтому достаём его <b>расширением</b>. "
-        "Оно само перехватит токен, скопирует в буфер и откроет этот чат:\n\n"
-        "<b>Установка (1 раз):</b>\n"
-        "1. Скачай и распакуй расширение по кнопке <b>«📦 Установить расширение»</b> ниже\n"
-        "2. Chrome/Edge: открой <code>chrome://extensions</code> → включи "
-        "<b>Режим разработчика</b> → <b>Загрузить распакованное</b> → выбери папку\n"
-        "   Firefox: <code>about:debugging</code> → Firefox/Tools → "
-        "<b>Temporary Extensions → Load Temporary Add-on</b> → выбери manifest.json\n\n"
-        "<b>Логин (каждый раз):</b>\n"
-        "3. Открой <a href=\"https://www.faceit.com\">faceit.com</a> и залогинься\n"
-        "4. Кликни по иконке расширения (черный круг) на панели\n"
-        "5. Токен скопируется в буфер, откроется этот чат — просто <b>отправь токен</b>\n\n"
-        "⏳ Жду твой токен…",
+        f"🔐 <b>Расширение для текущих матчей</b>\n\n"
+        f"Расширение само видит идущий матч на faceit.com (в твоей сессии браузера), "
+        f"собирает составы команд и шлёт их боту на ИИ-анализ. "
+        f"Токен Faceit добывать вручную <b>не нужно</b>.\n\n"
+        f"<b>1. Установка (один раз):</b>\n"
+        f"Нажми «📦 Скачать расширение» выше, распакуй zip в папку.\n\n"
+        f"<b>2. Загрузка в браузер:</b>\n"
+        f"• <b>Chrome / Edge / Яндекс:</b> открой <code>chrome://extensions</code> "
+        f"(в Яндексе — <code>browser://extensions/</code>), включи "
+        f"<b>Режим разработчика</b> справа сверху → <b>Загрузить распакованное</b> → "
+        f"выбери распакованную папку\n"
+        f"• <b>Firefox:</b> открой <code>about:debugging</code> → "
+        f"<b>This Firefox → Temporary Extensions → Load Temporary Add-on</b> → "
+        f"выбери <b>manifest.json</b> внутри распакованной папки\n\n"
+        f"<b>3. Привязка к боту:</b>\n"
+        f"Кликни по иконке расширения на панели → вставь этот токен:\n"
+        f"<code>{link_token}</code>\n\n"
+        f"<b>4. Использование:</b>\n"
+        f"Открой <a href=\"https://www.faceit.com\">faceit.com</a> залогиненным, "
+        f"когда найдёшь/начнёшь матч — расширение само пришлёт составы команд, "
+        f"бот пришлёт ИИ-анализ прямо сюда.\n\n"
+        f"⚠️ Браузер должен быть открыт на faceit.com во время матча.",
         reply_markup=builder.as_markup(),
         disable_web_page_preview=True,
     )
     await replace_dashboard(user_id, sent.chat.id, sent.message_id)
-
-
-@dp.callback_query(F.data == "facelogin_cancel")
-async def on_facelogin_cancel(callback: types.CallbackQuery, state: FSMContext):
-    """Отмена FSM-состояния."""
-    await state.clear()
-    await callback.answer("Отменено")
-    try:
-        await callback.message.edit_text("❌ Вход отменён.")
-    except Exception:
-        pass
-
-
-@dp.message(FaceitLogin.waiting_for_token)
-async def on_faceit_token_received(message: types.Message, state: FSMContext):
-    """Ловит следующий message от пользователя как токен (без /facelogin)."""
-    await delete_user_message(message)
-    user_id = message.from_user.id
-    token = message.text.strip()
-    await _process_faceit_token(message, user_id, token, state)
-
-
-async def _process_faceit_token(
-    message: types.Message, user_id: int, token: str, state: FSMContext
-):
-    """Общая логика проверки и сохранения токена.
-
-    Вызывается и из cmd_facelogin (с аргументом), и из FSM-хендлера.
-    """
-    if len(token) < 20:
-        await answer_and_track(
-            message, "Токен слишком короткий. Проверь, что скопировал полностью."
-        )
-        # Не сбрасываем state — даём попробовать ещё раз
-        return
-
-    await state.clear()
-
-    import aiohttp
-    await clear_dashboard(user_id)
-    loading_msg = await message.answer("🔍 Проверяю токен…")
-
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(
-                f"{FACEIT_BROWSER_API_BASE}/users/me",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Accept": "application/json",
-                    "Origin": "https://www.faceit.com",
-                    "Referer": "https://www.faceit.com/",
-                },
-                timeout=12,
-            ) as resp:
-                if resp.status != 200:
-                    await loading_msg.edit_text(
-                        "❌ Токен недействителен или истёк. Проверь, что скопировал правильно."
-                    )
-                    await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
-                    return
-                data = await resp.json()
-                verified_nick = data.get("nickname", "")
-
-                user_data = get_user_data(user_id)
-                if user_data and user_data[0]:
-                    if verified_nick.lower() != user_data[0].lower():
-                        await loading_msg.edit_text(
-                            f"❌ Несовпадение: токен от аккаунта <b>{verified_nick}</b>, "
-                            f"а привязан <b>{user_data[0]}</b>.\n"
-                            f"Сначала отвяжи ник и привяжи нужный через /setnick {verified_nick}"
-                        )
-                        await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
-                        return
-
-                save_faceit_session_token(user_id, token)
-                from ..db import cursor, conn as db_conn
-                cursor.execute(
-                    "UPDATE users SET faceit_verified = 1 WHERE user_id = ?", (user_id,)
-                )
-                db_conn.commit()
-
-                await loading_msg.edit_text(
-                    f"✅ <b>Faceit аккаунт верифицирован!</b>\n\n"
-                    f"Аккаунт: <b>{verified_nick}</b>\n"
-                    f"Теперь бот видит текущие матчи и автоматически анализирует составы."
-                )
-                await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
-                schedule_delete(loading_msg.chat.id, loading_msg.message_id)
-
-    except Exception as e:
-        await loading_msg.edit_text(f"❌ Ошибка при проверке токена: {str(e)}")
-        await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
 
 
 @dp.message(Command("unlink"))

@@ -788,6 +788,71 @@ export default {
       }
     }
 
+    // ===== /api/match-event (NEW) — расширение шлёт идущий матч =====
+    // Auth: link_token в теле (связывает с пользователем бота).
+    // Сохраняем матч в KV pending_match:{link_token} (массив, дедуп по match_id).
+    if (url.pathname === '/api/match-event' && request.method === 'POST') {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResp({ error: 'bad_request' }, 400);
+      }
+      const linkToken = body && body.link_token;
+      const match = body && body.match;
+      if (!linkToken || !match || !match.match_id) {
+        return jsonResp({ error: 'bad_request', message: 'link_token and match.match_id required' }, 400);
+      }
+      const key = 'pending_match:' + linkToken;
+      let arr = [];
+      try {
+        const raw = await env.NICKS_KV.get(key);
+        if (raw) arr = JSON.parse(raw) || [];
+      } catch {}
+      // Дедуп: если матч с этим match_id уже в очереди — не добавляем
+      if (!arr.some(function(m) { return m.match_id === match.match_id; })) {
+        arr.push(match);
+        await env.NICKS_KV.put(key, JSON.stringify(arr));
+      }
+      return jsonResp({ ok: true, queued: arr.length });
+    }
+
+    // ===== /api/pending-matches (NEW) — бот забирает матчи для обработки =====
+    // Auth: X-Auth-Secret. Query: ?link_token=... (получить) или ?link_token=...&match_id=... (удалить).
+    if (url.pathname === '/api/pending-matches') {
+      if (request.headers.get('X-Auth-Secret') !== env.AUTH_SECRET) {
+        return jsonResp({ error: 'unauthorized' }, 403);
+      }
+      const linkToken = url.searchParams.get('link_token');
+      if (!linkToken) {
+        return jsonResp({ error: 'bad_request', message: 'link_token query required' }, 400);
+      }
+      const key = 'pending_match:' + linkToken;
+
+      if (request.method === 'GET') {
+        const raw = await env.NICKS_KV.get(key);
+        const arr = raw ? (JSON.parse(raw) || []) : [];
+        return jsonResp({ matches: arr });
+      }
+
+      if (request.method === 'DELETE') {
+        const matchId = url.searchParams.get('match_id');
+        let raw = await env.NICKS_KV.get(key);
+        let arr = raw ? (JSON.parse(raw) || []) : [];
+        if (matchId) {
+          arr = arr.filter(function(m) { return m.match_id !== matchId; });
+          await env.NICKS_KV.put(key, JSON.stringify(arr));
+        } else {
+          // без match_id — очищаем всю очередь для этого токена
+          await env.NICKS_KV.delete(key);
+          arr = [];
+        }
+        return jsonResp({ ok: true, remaining: arr.length });
+      }
+
+      return jsonResp({ error: 'method_not_allowed' }, 405);
+    }
+
     return jsonResp({ error: 'not_found' }, 404);
   },
 };

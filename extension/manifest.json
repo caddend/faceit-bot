@@ -1,28 +1,38 @@
 {
   "manifest_version": 3,
-  "name": "Faceit Token Helper for Bot",
-  "version": "1.0",
-  "description": "Перехватывает Bearer-токен Faceit и отправляет его в Telegram-бота.",
-  "permissions": ["webRequest", "storage"],
+  "name": "Faceit Match Helper for Bot",
+  "version": "1.1",
+  "description": "Перехватывает идущий матч на faceit.com и шлёт составы команд боту на ИИ-анализ.",
+  "permissions": ["storage"],
   "host_permissions": [
     "https://www.faceit.com/*",
-    "https://api.faceit.com/*"
+    "https://api.faceit.com/*",
+    "<all_urls>"
   ],
   "action": {
-    "default_title": "Отправить токен Faceit в бота",
+    "default_title": "Открыть настройки",
+    "default_popup": "options.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
-  "background": {
-    "service_worker": "background.js"
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.faceit.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
   "web_accessible_resources": [
     {
-      "resources": ["prompt.html"],
-      "matches": ["<all_urls>"]
+      "resources": ["inject.js"],
+      "matches": ["https://www.faceit.com/*"]
     }
   ],
   "icons": {

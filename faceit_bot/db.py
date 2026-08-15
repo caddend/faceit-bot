@@ -40,6 +40,7 @@ _safe_migrate("ALTER TABLE users ADD COLUMN steam_id TEXT")
 _safe_migrate("ALTER TABLE users ADD COLUMN ai_mode INTEGER DEFAULT 0")
 _safe_migrate("ALTER TABLE users ADD COLUMN faceit_session_token TEXT")
 _safe_migrate("ALTER TABLE users ADD COLUMN faceit_verified INTEGER DEFAULT 0")
+_safe_migrate("ALTER TABLE users ADD COLUMN link_token TEXT")
 
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS elo_history (
@@ -284,3 +285,33 @@ def resolve_nickname(message: types.Message, args: list):
         return args[1]
     user_data = get_user_data(message.from_user.id)
     return user_data[0] if user_data else None
+
+
+def create_link_token(user_id: int) -> str:
+    """Создаёт/обновляет link_token для пользователя (привязка расширения к боту).
+
+    Токен хранится в БД и используется расширением при POST на Worker —
+    чтобы Worker знал, какому пользователю передать матч.
+    """
+    import secrets
+    token = secrets.token_urlsafe(24)
+    cursor.execute("UPDATE users SET link_token = ? WHERE user_id = ?", (token, user_id))
+    conn.commit()
+    return token
+
+
+def get_user_id_by_link_token(link_token: str) -> int | None:
+    """Возвращает user_id по link_token или None, если токен не найден."""
+    cursor.execute("SELECT user_id FROM users WHERE link_token = ?", (link_token,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def get_all_link_tokens():
+    """Для extension_match_worker: (user_id, nickname, link_token) для всех
+    пользователей, у которых есть и привязанный ник, и link_token."""
+    cursor.execute(
+        "SELECT user_id, nickname, link_token FROM users "
+        "WHERE nickname IS NOT NULL AND link_token IS NOT NULL"
+    )
+    return cursor.fetchall()

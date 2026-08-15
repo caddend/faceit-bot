@@ -13,7 +13,14 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from .runtime import bot, _api_cache
-from .config import FACEIT_API_BASE, ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL
+from .config import (
+    FACEIT_API_BASE,
+    ANTHROPIC_BASE_URL,
+    ANTHROPIC_AUTH_TOKEN,
+    ANTHROPIC_MODEL,
+    WEBAPP_URL,
+    WEBAPP_AUTH_SECRET,
+)
 from .db import (
     get_all_tracked_users,
     get_due_deletes,
@@ -21,13 +28,14 @@ from .db import (
     update_last_match,
     log_elo,
     schedule_delete,
+    get_all_link_tokens,
 )
 from .faceit_api import get_player_by_nickname, fetch_faceit_data, get_match_stats_text, _match_result_for_player
 from .coach import _sanitize_for_telegram, _ANTHROPIC_AVAILABLE
 from .formatting import section
-from .prematch import get_prematch_analysis, is_prematch_sent
-from .db import get_faceit_session_token
+from .prematch import get_prematch_analysis, is_prematch_sent, collect_prematch_data, call_prematch_llm
 from .balance import get_balance_footer
+import aiohttp
 
 try:
     from anthropic import Anthropic as _Anthropic
@@ -114,6 +122,96 @@ async def scheduled_delete_worker():
         except Exception:
             pass
         await asyncio.sleep(60)
+
+
+# ============================================================
+#  Воркер матчей от расширения — polling pending matches с Worker
+# ============================================================
+
+async def _fetch_pending_matches(link_token: str) -> list:
+    """GET /api/pending-matches?link_token=... — возвращает список матчей."""
+    if not WEBAPP_URL:
+        return []
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(
+                f"{WEBAPP_URL}/api/pending-matches?link_token={link_token}",
+                headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
+                timeout=10,
+            ) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return data.get("matches", []) or []
+    except Exception:
+        return []
+
+
+async def _delete_pending_match(link_token: str, match_id: str):
+    """DELETE /api/pending-matches?link_token=...&match_id=... — убрать обработанный."""
+    if not WEBAPP_URL:
+        return
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.delete(
+                f"{WEBAPP_URL}/api/pending-matches?link_token={link_token}&match_id={match_id}",
+                headers={"X-Auth-Secret": WEBAPP_AUTH_SECRET},
+                timeout=10,
+            ) as resp:
+                pass
+    except Exception:
+        pass
+
+
+async def extension_match_worker():
+    """Раз в 30с опрашивает Worker на предмет матчей, присланных расширением.
+
+    Для каждого матча: находит player_id пользователя (по нику), собирает
+    составы команд (collect_prematch_data), гонит ИИ (call_prematch_llm),
+    отправляет пользователю и удаляет из очереди.
+    """
+    await asyncio.sleep(15)
+    print("Воркер матчей от расширения запущен.")
+
+    while True:
+        try:
+            for user_id, nickname, link_token in get_all_link_tokens():
+                matches = await _fetch_pending_matches(link_token)
+                if not matches:
+                    continue
+
+                # player_id нужен, чтобы понять, какая команда «своя»
+                player_data = await get_player_by_nickname(nickname)
+                if not player_data:
+                    for m in matches:
+                        await _delete_pending_match(link_token, m.get("match_id", ""))
+                    continue
+                player_id = player_data["player_id"]
+
+                for match in matches:
+                    match_id = match.get("match_id", "")
+                    try:
+                        prematch_data = await collect_prematch_data(match, player_id)
+                        if not prematch_data:
+                            await _delete_pending_match(link_token, match_id)
+                            continue
+
+                        text = await asyncio.to_thread(call_prematch_llm, prematch_data, nickname)
+                        if text:
+                            text = _sanitize_for_telegram(text) + await get_balance_footer()
+                            await bot.send_message(
+                                chat_id=user_id,
+                                text=f"{section('⚡ ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}",
+                            )
+                    except Exception:
+                        pass
+                    finally:
+                        await _delete_pending_match(link_token, match_id)
+
+                await asyncio.sleep(2)
+        except Exception:
+            pass
+        await asyncio.sleep(30)
 
 
 # ============================================================

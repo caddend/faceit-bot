@@ -8,7 +8,7 @@ from .runtime import bot, dp
 # Импорт handler-модулей для регистрации хендлеров на dp (побочный эффект):
 from . import menu  # noqa: F401  (регистрирует on_menu_callback)
 from .handlers import profile, matches, stats  # noqa: F401
-from .tracker import background_match_tracker, scheduled_delete_worker, evening_session_report
+from .tracker import background_match_tracker, scheduled_delete_worker, evening_session_report, extension_match_worker
 from .webapp_sync import bulk_sync_to_worker
 from .db import get_all_tracked_users
 from .menu import BOT_COMMANDS
@@ -38,6 +38,7 @@ async def main():
         background_match_tracker(),
         scheduled_delete_worker(),
         evening_session_report(),
+        extension_match_worker(),
     )
 
 
