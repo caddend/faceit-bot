@@ -1,39 +1,95 @@
 const WORKER_URL = "https://polished-mouse-4c9d.mishashlikov216.workers.dev";
 const STORAGE_KEY = "faceit_bot_link_token";
 const VERIFIED_KEY = "faceit_bot_verified";
+const PROFILE_KEY = "faceit_bot_profile";
 
 function $(id) { return document.getElementById(id); }
 
-chrome.storage.local.get([STORAGE_KEY, VERIFIED_KEY], (res) => {
-  $("token").value = res[STORAGE_KEY] || "";
-  if (res[VERIFIED_KEY]) $("ok").textContent = "Привязано. Открой faceit.com — расширение работает.";
+// Загружаем сохранённые данные
+chrome.storage.local.get([STORAGE_KEY, VERIFIED_KEY, PROFILE_KEY], (res) => {
+  const token = res[STORAGE_KEY] || "";
+  const verified = res[VERIFIED_KEY] || false;
+  const profile = res[PROFILE_KEY] || null;
+
+  $("token").value = token;
+
+  if (verified && profile) {
+    showProfile(profile);
+    $("status").classList.add("show");
+    $("status-text").innerHTML = '<span style="color:#3ddc84">✓ Активно</span> — расширение работает';
+  } else if (token) {
+    $("status").classList.add("show");
+    $("status-text").innerHTML = '<span style="color:#ffa500">⚠ Не проверен</span> — нажми "Сохранить"';
+  }
 });
+
+function showProfile(profile) {
+  const profileDiv = $("profile");
+  profileDiv.classList.add("show");
+
+  $("avatar").src = profile.avatar || "";
+  $("faceit-nick").textContent = profile.faceit_nickname || "—";
+  $("tg-nick").textContent = "Telegram: " + (profile.tg_nickname || "—");
+  $("faceit-status").textContent = "Faceit: привязан ✓";
+  $("faceit-status").style.color = "#3ddc84";
+}
 
 $("save").addEventListener("click", async () => {
   const token = $("token").value.trim();
-  if (!token) return;
+  if (!token) {
+    $("error").textContent = "Введи токен из бота";
+    $("error").style.display = "block";
+    $("ok").style.display = "none";
+    return;
+  }
 
   $("ok").style.display = "none";
+  $("error").style.display = "none";
+  $("save").disabled = true;
   $("save").textContent = "Проверка...";
 
   try {
     const resp = await fetch(`${WORKER_URL}/api/verify-link`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ link_token: token }),
     });
     const data = await resp.json();
+
     if (resp.ok && data.ok) {
-      await chrome.storage.local.set({ [STORAGE_KEY]: token, [VERIFIED_KEY]: true });
-      $("ok").textContent = `Привязано к ${data.nickname}. Бот пришлёт подтверждение в Telegram.`;
+      // Получаем профиль с Faceit
+      const faceitResp = await fetch(`${WORKER_URL}/api/extension-profile?link_token=${token}`);
+      const faceitData = await faceitResp.json();
+
+      const profile = {
+        tg_nickname: data.tg_nickname || data.nickname || "—",
+        faceit_nickname: faceitData.nickname || data.nickname || "—",
+        avatar: faceitData.avatar || "",
+        timestamp: Date.now()
+      };
+
+      await chrome.storage.local.set({
+        [STORAGE_KEY]: token,
+        [VERIFIED_KEY]: true,
+        [PROFILE_KEY]: profile
+      });
+
+      showProfile(profile);
+      $("ok").textContent = `✓ Привязано к ${profile.faceit_nickname}. Бот пришлёт подтверждение в Telegram.`;
       $("ok").style.display = "block";
-      setTimeout(() => window.close(), 1500);
+      $("status").classList.add("show");
+      $("status-text").innerHTML = '<span style="color:#3ddc84">✓ Активно</span> — расширение работает';
+
+      setTimeout(() => window.close(), 2000);
     } else {
-      $("ok").textContent = `Ошибка: ${data.error || "токен не найден"}`;
-      $("ok").style.display = "block";
+      $("error").textContent = `Ошибка: ${data.error || "токен не найден"}`;
+      $("error").style.display = "block";
     }
   } catch (e) {
-    $("ok").textContent = `Сеть: ${e}`;
-    $("ok").style.display = "block";
+    $("error").textContent = `Ошибка сети: ${e.message}`;
+    $("error").style.display = "block";
   }
+
+  $("save").disabled = false;
   $("save").textContent = "Сохранить";
 });

@@ -341,6 +341,15 @@ def get_all_for_sync():
     return cursor.fetchall()
 
 
+def has_link_token(user_id: int) -> bool:
+    """Возвращает True если у пользователя есть link_token (расширение привязано)."""
+    cursor.execute("SELECT link_token FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return bool(row and row[0])
+    )
+    return cursor.fetchall()
+
+
 def get_meta(key: str, default: str = "") -> str:
     """Читает значение из key-value таблицы bot_meta."""
     cursor.execute("SELECT value FROM bot_meta WHERE key = ?", (key,))

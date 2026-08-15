@@ -4,22 +4,55 @@
 <meta charset="UTF-8">
 <title>Faceit Bot — настройки</title>
 <style>
-  body{font-family:system-ui,sans-serif;width:380px;margin:0;padding:20px;background:#000;color:#fff}
+  body{font-family:system-ui,sans-serif;width:420px;margin:0;padding:20px;background:#000;color:#fff}
   h2{margin:0 0 12px;font-size:18px}
   p{color:#888;font-size:13px;margin:4px 0 12px;line-height:1.5}
+
+  .profile-section{display:none;margin-bottom:20px;padding:16px;background:#1a1a1a;border:1px solid #333;border-radius:12px}
+  .profile-section.show{display:block}
+  .profile-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .profile-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;background:#333}
+  .profile-info{}
+  .profile-nick{font-size:16px;font-weight:700;margin-bottom:4px}
+  .profile-tg{font-size:12px;color:#666}
+  .profile-faceit{font-size:12px;color:#888;margin-top:4px}
+
   input{width:100%;padding:10px;font-family:monospace;font-size:13px;box-sizing:border-box;background:#1a1a1a;color:#fff;border:1px solid #333;border-radius:8px}
-  button{margin-top:12px;padding:10px 16px;font-size:14px;background:#fff;color:#000;border:none;border-radius:8px;cursor:pointer;width:100%}
+  button{margin-top:12px;padding:10px 16px;font-size:14px;background:#fff;color:#000;border:none;border-radius:8px;cursor:pointer;width:100%;font-weight:600}
+  button:disabled{opacity:0.5;cursor:not-allowed}
   .ok{color:#3ddc84;font-size:13px;margin-top:8px;display:none}
-  .hint{color:#666;font-size:12px;margin-top:14px}
+  .error{color:#ff6b6b;font-size:13px;margin-top:8px;display:none}
+  .hint{color:#666;font-size:12px;margin-top:14px;line-height:1.6}
+  .status{padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;font-size:12px;margin-top:12px;display:none}
+  .status.show{display:block}
 </style>
 </head>
 <body>
-  <h2>Faceit Bot</h2>
+  <h2>Faceit Bot Extension</h2>
+
+  <div class="profile-section" id="profile">
+    <div class="profile-header">
+      <img class="profile-avatar" id="avatar" src="" alt="">
+      <div class="profile-info">
+        <div class="profile-nick" id="faceit-nick">—</div>
+        <div class="profile-tg" id="tg-nick">Telegram: —</div>
+        <div class="profile-faceit" id="faceit-status">Faceit: не привязан</div>
+      </div>
+    </div>
+  </div>
+
   <p>Вставь токен привязки из бота (команда <b>/facelogin</b>):</p>
   <input id="token" type="text" placeholder="link_token" autocomplete="off">
   <button id="save">Сохранить</button>
   <div class="ok" id="ok"></div>
-  <p class="hint">Токен связывает расширение с твоим аккаунтом бота. Браузер должен быть открыт на faceit.com во время матча.</p>
+  <div class="error" id="error"></div>
+
+  <div class="status" id="status">
+    <div style="color:#888;margin-bottom:4px">Статус расширения:</div>
+    <div id="status-text">—</div>
+  </div>
+
+  <p class="hint">Токен связывает расширение с твоим аккаунтом бота. После привязки открой любой профиль на faceit.com — расширение начнёт собирать данные автоматически.</p>
   <script src="options.js"></script>
 </body>
 </html>

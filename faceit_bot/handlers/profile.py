@@ -213,10 +213,11 @@ async def cmd_facelogin(message: types.Message):
         return
 
     link_token = create_link_token(user_id)
-    # Пушим link_token в Worker, чтобы мини-приложение могло тянуть scrape-данные
+    # Пушим link_token + Telegram username в Worker
     user_data = get_user_data(user_id)
+    tg_username = message.from_user.username or message.from_user.first_name or str(user_id)
     if user_data and user_data[0]:
-        await push_user_to_worker(user_id, user_data[0], link_token)
+        await push_user_to_worker(user_id, user_data[0], link_token, tg_username)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="Скачать расширение", url=EXTENSION_DOWNLOAD_URL)

@@ -4,6 +4,8 @@
 // Все перехваченные url логируются в консоль для отладки.
 
 (function () {
+  // Сигнал что inject загрузился в MAIN world
+  window.postMessage({ __faceit_bot_inject_ready: true }, "*");
   const MATCH_RE = /api\.faceit\.com\/match\/v2\/matches/;
   const STATS_RES = [
     /api\.faceit\.com\/stats\//,
@@ -159,5 +161,5 @@
     return origSend.apply(this, arguments);
   };
 
-  console.log("[FaceitBot] inject loaded");
+  console.log("[FaceitBot] inject loaded (MAIN world)");
 })();

@@ -793,9 +793,13 @@ export default {
         await env.NICKS_KV.put(String(body.user_id), String(body.nickname));
         if (body.link_token) {
           await env.NICKS_KV.put('link_token:' + String(body.user_id), String(body.link_token));
-          // Обратный индекс для verify-link: link_token → {user_id, nickname}
+          // Обратный индекс для verify-link: link_token → {user_id, nickname, tg_nickname}
           await env.NICKS_KV.put('verify:' + String(body.link_token),
-            JSON.stringify({ user_id: body.user_id, nickname: body.nickname }));
+            JSON.stringify({
+              user_id: body.user_id,
+              nickname: body.nickname,
+              tg_nickname: body.tg_nickname || body.nickname
+            }));
         }
         return jsonResp({ ok: true });
       } catch {
@@ -817,7 +821,11 @@ export default {
           if (u.link_token) {
             promises.push(env.NICKS_KV.put('link_token:' + String(u.user_id), String(u.link_token)));
             promises.push(env.NICKS_KV.put('verify:' + String(u.link_token),
-              JSON.stringify({ user_id: u.user_id, nickname: u.nickname })));
+              JSON.stringify({
+                user_id: u.user_id,
+                nickname: u.nickname,
+                tg_nickname: u.tg_nickname || u.nickname
+              })));
           }
         });
         await Promise.all(promises);
@@ -948,9 +956,41 @@ export default {
       try { info = JSON.parse(raw); } catch { info = {}; }
       // Pending-уведомление для бота
       await env.NICKS_KV.put('verify_pending:' + String(linkToken),
-        JSON.stringify({ user_id: info.user_id, nickname: info.nickname, ts: Math.floor(Date.now()/1000) }),
+        JSON.stringify({ user_id: info.user_id, nickname: info.nickname, tg_nickname: info.tg_nickname, ts: Math.floor(Date.now()/1000) }),
         { expirationTtl: 600 });
-      return jsonResp({ ok: true, nickname: info.nickname || '' });
+      return jsonResp({ ok: true, nickname: info.nickname || '', tg_nickname: info.tg_nickname || '' });
+    }
+
+    // ===== /api/extension-profile (NEW) — профиль для расширения =====
+    if (url.pathname === '/api/extension-profile' && request.method === 'GET') {
+      const linkToken = url.searchParams.get('link_token');
+      if (!linkToken) {
+        return jsonResp({ error: 'bad_request', message: 'link_token required' }, 400);
+      }
+      const raw = await env.NICKS_KV.get('verify:' + String(linkToken));
+      if (!raw) {
+        return jsonResp({ error: 'not_found' }, 404);
+      }
+      let info;
+      try { info = JSON.parse(raw); } catch { return jsonResp({ error: 'invalid_data' }, 500); }
+
+      const nickname = info.nickname || '';
+      if (!nickname) {
+        return jsonResp({ error: 'no_nickname' }, 404);
+      }
+
+      // Получаем профиль с Faceit
+      const playerData = await getFaceitProfile(nickname, env.FACEIT_TOKEN);
+      if (!playerData) {
+        return jsonResp({ error: 'player_not_found' }, 404);
+      }
+
+      return jsonResp({
+        nickname: nickname,
+        avatar: playerData.avatar || '',
+        country: (playerData.country || '').toUpperCase(),
+        tg_nickname: info.tg_nickname || ''
+      });
     }
 
     // ===== /api/verify-pending (NEW) — бот забирает pending verify-уведомления =====

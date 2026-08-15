@@ -12,10 +12,10 @@ import aiohttp
 from .config import WEBAPP_URL, WEBAPP_AUTH_SECRET
 
 
-async def push_user_to_worker(user_id: int, nickname: str, link_token: str = None):
-    """Пушит user_id → nickname (+ link_token) в Worker KV.
+async def push_user_to_worker(user_id: int, nickname: str, link_token: str = None, tg_nickname: str = None):
+    """Пушит user_id → nickname (+ link_token + tg_nickname) в Worker KV.
 
-    Вызывается из cmd_setnick после save_nick.
+    Вызывается из cmd_setnick после save_nick и из cmd_facelogin.
     """
     if not WEBAPP_URL:
         return
@@ -23,6 +23,8 @@ async def push_user_to_worker(user_id: int, nickname: str, link_token: str = Non
         payload = {"user_id": user_id, "nickname": nickname}
         if link_token:
             payload["link_token"] = link_token
+        if tg_nickname:
+            payload["tg_nickname"] = tg_nickname
         async with aiohttp.ClientSession() as s:
             async with s.post(
                 f"{WEBAPP_URL}/api/update-user",

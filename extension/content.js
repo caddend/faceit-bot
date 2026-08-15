@@ -1,7 +1,6 @@
-// Content script (изолированный мир). Инжектит inject.js в main-world страницы,
-// чтобы перехватить fetch/XHR к api.faceit.com. Принимает матч/скрап через postMessage,
-// POST'ит на Worker. Также модифицирует страницу faceit.com: floating-кнопка в бота
-// и блок расширенной статистики на профиле.
+// Content script (изолированный мир). inject.js грузится в MAIN world отдельно
+// (см. manifest content_scripts world:MAIN) и перехватывает fetch/XHR к api.faceit.com.
+// Здесь: слушаем postMessage из inject.js, POST'ит на Worker, модифицируем страницу.
 
 const WORKER_URL = "https://polished-mouse-4c9d.mishashlikov216.workers.dev";
 const BOT_URL = "https://t.me/Faceitxdxdtrackbot";
@@ -10,12 +9,26 @@ const SENT_KEY = "faceit_bot_sent_matches";
 const VERIFIED_KEY = "faceit_bot_verified";
 const STATS_KEY = "faceit_bot_last_stats";
 
-(function inject() {
-  const s = document.createElement("script");
-  s.src = chrome.runtime.getURL("inject.js");
-  s.onload = () => s.remove();
-  (document.head || document.documentElement).appendChild(s);
-})();
+// Fallback: если MAIN-world скрипт не загрузился (старый Firefox), инжектим вручную.
+let _injectReady = false;
+window.addEventListener("message", (ev) => {
+  if (ev.source === window && ev.data && ev.data.__faceit_bot_inject_ready) {
+    _injectReady = true;
+  }
+});
+setTimeout(() => {
+  if (!_injectReady) {
+    console.warn("[FaceitBot] MAIN-world inject не сработал, пробую fallback...");
+    try {
+      const s = document.createElement("script");
+      s.src = chrome.runtime.getURL("inject.js");
+      s.onload = () => s.remove();
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {
+      console.warn("[FaceitBot] fallback inject не удался:", e);
+    }
+  }
+}, 1500);
 
 // === UI: floating-кнопка в бота + блок статистики ===
 function injectUI() {
