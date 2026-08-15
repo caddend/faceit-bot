@@ -1,6 +1,6 @@
 """Меню команд: навигация inline-кнопками с подменю.
 
-Топ-уровень: 📊 Статистика, 🎯 Матчи, 🧠 ИИ-тренер, ⚙️ Настройки, 📱 Расширение.
+Топ-уровень: Статистика, Матчи, ИИ-тренер, Настройки, Расширение.
 Каждая ведёт в подменю со списком команд. menu:ai включает/выключает ai_mode.
 menu:ext показывает инструкцию установки расширения.
 """
@@ -14,18 +14,18 @@ from .formatting import section
 
 # Подменю (кнопки топ-уровня → callback menu:<key>)
 CATEGORIES = {
-    "stats": ("📊 Статистика", [
+    "stats": ("Статистика", [
         ("/stats [ник]", "Faceit + Steam статистика + ИИ-анализ"),
         ("/elo", "динамика ELO (график)"),
         ("/session", "текущая игровая сессия"),
     ]),
-    "matches": ("🎯 Матчи", [
+    "matches": ("Матчи", [
         ("/prematch [ник]", "ИИ-анализ состава команд перед матчем"),
         ("/last [ник]", "последняя игра со скорбордом"),
         ("/history [ник]", "история последних 15 матчей"),
         ("/activity", "активность за 30 дней (график)"),
     ]),
-    "settings": ("⚙️ Настройки", [
+    "settings": ("Настройки", [
         ("/setnick [ник]", "привязать никнейм"),
         ("/setsteam {SteamID}", "привязать SteamID"),
         ("/unlink", "отвязать никнейм"),
@@ -67,13 +67,13 @@ BOT_COMMANDS = [
 def main_menu_keyboard():
     """Топ-уровень: 5 кнопок + опционально мини-приложение."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="📊 Статистика", callback_data="menu:stats")
-    builder.button(text="🎯 Матчи", callback_data="menu:matches")
-    builder.button(text="🧠 ИИ-тренер", callback_data="menu:ai")
-    builder.button(text="⚙️ Настройки", callback_data="menu:settings")
-    builder.button(text="📱 Расширение", callback_data="menu:ext")
+    builder.button(text="Статистика", callback_data="menu:stats")
+    builder.button(text="Матчи", callback_data="menu:matches")
+    builder.button(text="ИИ-тренер", callback_data="menu:ai")
+    builder.button(text="Настройки", callback_data="menu:settings")
+    builder.button(text="Расширение", callback_data="menu:ext")
     if WEBAPP_URL:
-        builder.button(text="📱 Мини-приложение", web_app=types.WebAppInfo(url=WEBAPP_URL))
+        builder.button(text="Мини-приложение", web_app=types.WebAppInfo(url=WEBAPP_URL))
     builder.adjust(2)
     return builder.as_markup()
 
@@ -81,7 +81,7 @@ def main_menu_keyboard():
 def category_keyboard(back_callback="menu:root"):
     """Кнопка «Назад»."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 Назад", callback_data=back_callback)
+    builder.button(text="Назад", callback_data=back_callback)
     return builder.as_markup()
 
 
@@ -102,8 +102,8 @@ def menu_ai_text(user_id: int) -> str:
     ai_on = get_ai_mode(user_id)
     if ai_on:
         return (
-            f"{section('🧠 ИИ-ТРЕНЕР')}\n\n"
-            f"Режим: <b>ИИ-чат активен</b> 🤖\n\n"
+            f"{section('ИИ-ТРЕНЕР')}\n\n"
+            f"Режим: <b>ИИ-чат активен</b>\n\n"
             f"Пиши любой вопрос по CS2/Faceit/боту — отвечу с памятью контекста.\n"
             f"Могу: план тренировок, разбор статистики, помощь с командами, "
             f"вопросы про CS2/Faceit.\n\n"
@@ -111,8 +111,8 @@ def menu_ai_text(user_id: int) -> str:
             f"Вернуться к статистике: /aimode"
         )
     return (
-        f"{section('🧠 ИИ-ТРЕНЕР')}\n\n"
-        f"Режим: <b>статистика</b> 📊\n\n"
+        f"{section('ИИ-ТРЕНЕР')}\n\n"
+        f"Режим: <b>статистика</b>\n\n"
         f"Включи ИИ-чат, чтобы задавать вопросы по CS2/Faceit, получать "
         f"планы тренировок и разбор статистики с памятью контекста.\n\n"
         f"Включить: /aimode или кнопка ниже."
@@ -122,16 +122,16 @@ def menu_ai_text(user_id: int) -> str:
 def menu_ext_text():
     """Текст инструкции установки расширения (переиспользуется в /start и /facelogin)."""
     return (
-        f"{section('📱 РАСШИРЕНИЕ')}\n\n"
-        f"Расширение видит идущий матч на faceit.com и шлёт ботy составы команд "
+        f"{section('РАСШИРЕНИЕ')}\n\n"
+        f"Расширение видит идущий матч на faceit.com и шлёт боту составы команд "
         f"для ИИ-анализа. Также собирает расширенную статистику (Rating 3.0, swing, ELO).\n\n"
         f"<b>1. Получи токен привязки:</b> /facelogin\n"
         f"<b>2. Скачай расширение:</b> <a href=\"{EXTENSION_DOWNLOAD_URL}\">по ссылке</a>, распакуй\n"
         f"<b>3. Загрузи в браузер:</b>\n"
-        f"• Chrome/Edge/Яндекс: <code>chrome://extensions</code> "
+        f"Chrome/Edge/Яндекс: <code>chrome://extensions</code> "
         f"(Яндекс: <code>browser://extensions/</code>) → Режим разработчика → "
         f"Загрузить распакованное → выбери папку\n"
-        f"• Firefox: <code>about:debugging</code> → Load Temporary Add-on → manifest.json\n"
+        f"Firefox: <code>about:debugging</code> → Load Temporary Add-on → manifest.json\n"
         f"<b>4. Кликни иконку расширения</b> → вставь токен из /facelogin"
     )
 
@@ -171,13 +171,13 @@ async def on_menu_callback(callback: types.CallbackQuery):
         # Переключаем режим и показываем статус
         new_state = toggle_ai_mode(callback.from_user.id)
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 В меню", callback_data="menu:root")
+        builder.button(text="В меню", callback_data="menu:root")
         await _edit_or_send(callback, menu_ai_text(callback.from_user.id), builder.as_markup())
         return
 
     if key == "ext":
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 В меню", callback_data="menu:root")
+        builder.button(text="В меню", callback_data="menu:root")
         await _edit_or_send(callback, menu_ext_text(), builder.as_markup())
         return
 

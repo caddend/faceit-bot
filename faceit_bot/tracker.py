@@ -75,7 +75,7 @@ async def background_match_tracker():
                         if prematch_text and prematch_mid:
                             sent = await bot.send_message(
                                 chat_id=user_id,
-                                text=f"{section('⚡ ПРЕДМАТЧ-АНАЛИЗ')}\n\n{prematch_text}"
+                                text=f"{section('ПРЕДМАТЧ-АНАЛИЗ')}\n\n{prematch_text}"
                             )
                             schedule_delete(sent.chat.id, sent.message_id)
                     except Exception:
@@ -201,7 +201,7 @@ async def extension_match_worker():
                             text = _sanitize_for_telegram(text) + await get_balance_footer()
                             await bot.send_message(
                                 chat_id=user_id,
-                                text=f"{section('⚡ ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}",
+                                text=f"{section('ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}",
                             )
                     except Exception:
                         pass

@@ -72,7 +72,7 @@ async def cmd_prematch(message: types.Message):
     player_id = player_data['player_id']
 
     await clear_dashboard(user_id)
-    loading_msg = await message.answer("🔍 Ищу активный матч и анализирую составы...")
+    loading_msg = await message.answer("Ищу активный матч и анализирую составы...")
 
     text, match_id = await get_prematch_analysis(player_id, nickname)
     if not text:
@@ -83,7 +83,7 @@ async def cmd_prematch(message: types.Message):
         await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
         return
 
-    await loading_msg.edit_text(f"{section('⚡ ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}")
+    await loading_msg.edit_text(f"{section('ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}")
     await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
     schedule_delete(loading_msg.chat.id, loading_msg.message_id)
 

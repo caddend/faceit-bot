@@ -53,8 +53,8 @@ async def cmd_start(message: types.Message):
     # Онбординг: нет ника → пошаговый гайд для новичков
     if not has_nick:
         builder = InlineKeyboardBuilder()
-        builder.button(text="📱 Установить расширение", callback_data="menu:ext")
-        builder.button(text="🧠 ИИ-тренер", callback_data="menu:ai")
+        builder.button(text="Установить расширение", callback_data="menu:ext")
+        builder.button(text="ИИ-тренер", callback_data="menu:ai")
         builder.adjust(1)
         sent = await message.answer(
             f"{section('ДОБРО ПОЖАЛОВАТЬ')}\n\n"
@@ -73,15 +73,15 @@ async def cmd_start(message: types.Message):
     # Есть ник, но нет расширения → предложить установку + обычное меню
     if not has_link_token(user_id):
         builder = InlineKeyboardBuilder()
-        builder.button(text="📊 Статистика", callback_data="menu:stats")
-        builder.button(text="🎯 Матчи", callback_data="menu:matches")
-        builder.button(text="🧠 ИИ-тренер", callback_data="menu:ai")
-        builder.button(text="⚙️ Настройки", callback_data="menu:settings")
-        builder.button(text="📱 Установить расширение", callback_data="menu:ext")
+        builder.button(text="Статистика", callback_data="menu:stats")
+        builder.button(text="Матчи", callback_data="menu:matches")
+        builder.button(text="ИИ-тренер", callback_data="menu:ai")
+        builder.button(text="Настройки", callback_data="menu:settings")
+        builder.button(text="Установить расширение", callback_data="menu:ext")
         builder.adjust(2)
         sent = await message.answer(
             f"{menu_root_text()}\n\n"
-            f"💡 <i>Привет! Расширение ещё не установлено — с ним бот видит "
+            f"<i>Расширение ещё не установлено — с ним бот видит "
             f"текущие матчи и Rating 3.0. Установить:</i>",
             reply_markup=builder.as_markup(),
         )
@@ -99,7 +99,7 @@ async def cmd_clear(message: types.Message):
     await delete_user_message(message)
     user_id = message.from_user.id
     clear_chat_history(user_id)
-    sent = await message.answer("🧹 История чата с ИИ очищена. Контекст сброшен.")
+    sent = await message.answer("История чата с ИИ очищена. Контекст сброшен.")
     await replace_dashboard(user_id, sent.chat.id, sent.message_id)
 
 
@@ -193,22 +193,22 @@ async def cmd_facelogin(message: types.Message):
     link_token = create_link_token(user_id)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="📦 Скачать расширение", url=EXTENSION_DOWNLOAD_URL)
+    builder.button(text="Скачать расширение", url=EXTENSION_DOWNLOAD_URL)
     builder.adjust(1)
 
     sent = await message.answer(
-        f"🔐 <b>Расширение для текущих матчей</b>\n\n"
+        f"<b>Расширение для текущих матчей</b>\n\n"
         f"Расширение само видит идущий матч на faceit.com (в твоей сессии браузера), "
         f"собирает составы команд и шлёт их боту на ИИ-анализ. "
         f"Токен Faceit добывать вручную <b>не нужно</b>.\n\n"
         f"<b>1. Установка (один раз):</b>\n"
-        f"Нажми «📦 Скачать расширение» выше, распакуй zip в папку.\n\n"
+        f"Нажми «Скачать расширение» выше, распакуй zip в папку.\n\n"
         f"<b>2. Загрузка в браузер:</b>\n"
-        f"• <b>Chrome / Edge / Яндекс:</b> открой <code>chrome://extensions</code> "
+        f"<b>Chrome / Edge / Яндекс:</b> открой <code>chrome://extensions</code> "
         f"(в Яндексе — <code>browser://extensions/</code>), включи "
         f"<b>Режим разработчика</b> справа сверху → <b>Загрузить распакованное</b> → "
         f"выбери распакованную папку\n"
-        f"• <b>Firefox:</b> открой <code>about:debugging</code> → "
+        f"<b>Firefox:</b> открой <code>about:debugging</code> → "
         f"<b>This Firefox → Temporary Extensions → Load Temporary Add-on</b> → "
         f"выбери <b>manifest.json</b> внутри распакованной папки\n\n"
         f"<b>3. Привязка к боту:</b>\n"
@@ -218,7 +218,7 @@ async def cmd_facelogin(message: types.Message):
         f"Открой <a href=\"https://www.faceit.com\">faceit.com</a> залогиненным, "
         f"когда найдёшь/начнёшь матч — расширение само пришлёт составы команд, "
         f"бот пришлёт ИИ-анализ прямо сюда.\n\n"
-        f"⚠️ Браузер должен быть открыт на faceit.com во время матча.",
+        f"Браузер должен быть открыт на faceit.com во время матча.",
         reply_markup=builder.as_markup(),
         disable_web_page_preview=True,
     )
@@ -277,16 +277,15 @@ async def cmd_aimode(message: types.Message):
     new_state = toggle_ai_mode(user_id)
     await clear_dashboard(user_id)
 
-    mode_icon = "🤖" if new_state else "📊"
     mode_text = "ИИ-консультант (чат о CS2)" if new_state else "Статистика (обычный режим)"
 
     hint = ""
     if new_state:
-        hint = "\n\n💡 Теперь любое сообщение — вопрос к ИИ о CS2. Для возврата к статистике используй /aimode снова."
+        hint = "\n\nТеперь любое сообщение — вопрос к ИИ о CS2. Для возврата к статистике используй /aimode снова."
     else:
-        hint = "\n\n💡 Обычный режим восстановлен. Команды работают как раньше."
+        hint = "\n\nОбычный режим восстановлен. Команды работают как раньше."
 
-    sent = await message.answer(f"{mode_icon} Режим переключён: <b>{mode_text}</b>{hint}")
+    sent = await message.answer(f"Режим переключён: <b>{mode_text}</b>{hint}")
     await replace_dashboard(user_id, sent.chat.id, sent.message_id)
 
 
@@ -317,7 +316,7 @@ async def cmd_users(message: types.Message):
             lvl = player_data.get('games', {}).get('cs2', {}).get('skill_level', 'N/A')
         else:
             elo, lvl = "N/A", "N/A"
-        badge = " ✅" if nickname.lower() in verified_nicks else ""
+        badge = " [verified]" if nickname.lower() in verified_nicks else ""
         name = nickname + badge + (f" (x{count})" if count > 1 else "")
         return [name, lvl, elo]
 

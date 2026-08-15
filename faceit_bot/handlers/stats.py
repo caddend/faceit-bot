@@ -114,7 +114,7 @@ async def cmd_stats(message: types.Message):
         )
         photo = types.BufferedInputFile(chart_bytes, filename="stats.png")
         builder = InlineKeyboardBuilder()
-        builder.button(text="🧠 ИИ-анализ", callback_data=f"coach:{user_id}")
+        builder.button(text="ИИ-анализ", callback_data=f"coach:{user_id}")
         markup = builder.as_markup()
         sent = await bot.send_photo(
             chat_id=message.chat.id, photo=photo, caption=caption, reply_markup=markup
@@ -795,7 +795,7 @@ async def catch_all(message: types.Message):
             return
 
         await clear_dashboard(user_id)
-        loading_msg = await message.answer("🤖 Думаю...")
+        loading_msg = await message.answer("Думаю...")
 
         # Импортируем модуль с функциями для ИИ
         from .. import ai_functions

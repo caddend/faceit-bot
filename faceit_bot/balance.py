@@ -54,8 +54,8 @@ def format_balance(balance: int | None) -> str:
 async def get_balance_footer() -> str:
     """Возвращает готовую строку-подпись для добавления под ответ ИИ.
 
-    Формат: '\n\n━━━\n🔋 Осталось токенов: 1 234 567'
-    При ошибке: '\n\n━━━\n🔋 Осталось токенов: недоступно'
+    Формат: '\n\n━━━\nОсталось токенов: 1 234 567'
+    При ошибке: '\n\n━━━\nОсталось токенов: недоступно'
     """
     balance = await fetch_token_balance()
-    return f"\n\n━━━\n🔋 Осталось токенов: {format_balance(balance)}"
+    return f"\n\n━━━\nОсталось токенов: {format_balance(balance)}"
