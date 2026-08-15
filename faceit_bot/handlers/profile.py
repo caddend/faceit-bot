@@ -304,10 +304,10 @@ async def cmd_users(message: types.Message):
     await clear_dashboard(user_id)
     loading_msg = await message.answer("Загружаю список аккаунтов...")
 
-    # Получаем список верифицированных ников
+    # Никнеймы, у которых установлено расширение (есть link_token)
     from ..db import cursor as db_cursor
-    db_cursor.execute("SELECT nickname FROM users WHERE faceit_verified = 1 AND nickname IS NOT NULL")
-    verified_nicks = set(row[0].lower() for row in db_cursor.fetchall())
+    db_cursor.execute("SELECT DISTINCT lower(nickname) FROM users WHERE link_token IS NOT NULL AND nickname IS NOT NULL")
+    ext_nicks = set(row[0] for row in db_cursor.fetchall())
 
     async def get_account_elo(nickname: str, count: int):
         player_data = await get_player_by_nickname(nickname)
@@ -316,14 +316,14 @@ async def cmd_users(message: types.Message):
             lvl = player_data.get('games', {}).get('cs2', {}).get('skill_level', 'N/A')
         else:
             elo, lvl = "N/A", "N/A"
-        badge = " [verified]" if nickname.lower() in verified_nicks else ""
+        badge = " [extension]" if nickname.lower() in ext_nicks else ""
         name = nickname + badge + (f" (x{count})" if count > 1 else "")
         return [name, lvl, elo]
 
     tasks = [get_account_elo(nick, count) for nick, count in accounts]
     results = await asyncio.gather(*tasks)
 
-    verified_count = sum(1 for nick, _ in accounts if nick.lower() in verified_nicks)
+    ext_count = sum(1 for nick, _ in accounts if nick.lower() in ext_nicks)
 
     body = table(results, headers=["Аккаунт", "Lvl", "ELO"])
 
@@ -331,7 +331,7 @@ async def cmd_users(message: types.Message):
         f"{section('ПРИВЯЗАННЫЕ АККАУНТЫ')}\n"
         f"{kv('Пользователей бота', total_tg_users)}\n"
         f"{kv('Уникальных Faceit аккаунтов', len(accounts))}\n"
-        f"{kv('Верифицированных', verified_count)}\n\n"
+        f"{kv('С расширением', ext_count)}\n\n"
         f"<code>{body}</code>"
     )
     await loading_msg.edit_text(text)
