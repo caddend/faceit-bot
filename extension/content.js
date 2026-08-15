@@ -41,23 +41,27 @@ setTimeout(() => {
 // === UI: floating-кнопка в бота + блок статистики ===
 function injectUI() {
   if (document.getElementById("fb-side-button")) return;
+  if (!document.body) return; // Ждём body
 
   const btn = document.createElement("a");
   btn.id = "fb-side-button";
   btn.href = BOT_URL;
   btn.target = "_blank";
   btn.title = "Открыть Telegram-бота";
-  btn.innerHTML = "Бот";
+  btn.innerHTML = "🤖 Бот";
   document.body.appendChild(btn);
 
   const style = document.createElement("style");
   style.textContent = `
-    #fb-side-button{position:fixed;right:16px;bottom:16px;z-index:999999;
-      background:#000;color:#fff;padding:10px 16px;border-radius:12px;
-      font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer;
-      transition:transform .15s,background .15s}
-    #fb-side-button:hover{transform:scale(1.05);background:#222}
+    #fb-side-button{position:fixed!important;right:20px!important;bottom:20px!important;
+      z-index:2147483647!important;background:#0F172A!important;color:#F8FAFC!important;
+      padding:12px 20px!important;border-radius:12px!important;border:1px solid #1E293B!important;
+      font:600 14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif!important;
+      text-decoration:none!important;box-shadow:0 8px 24px rgba(0,0,0,.5)!important;
+      cursor:pointer!important;transition:all .2s ease!important;display:block!important;
+      pointer-events:auto!important;opacity:1!important;visibility:visible!important}
+    #fb-side-button:hover{transform:translateY(-2px)!important;background:#1E293B!important;
+      box-shadow:0 12px 32px rgba(0,0,0,.6)!important}
     #fb-stats-box{margin:16px 0;padding:16px;background:#141414;border:1px solid rgba(255,255,255,.08);
       border-radius:14px;color:#fff;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
     #fb-stats-box h3{margin:0 0 10px;font-size:14px;font-weight:700}
