@@ -1,4 +1,4 @@
-﻿"""Хендлеры команд матчей: /last, /history, /<number>, /activity.
+﻿"""Хендлеры команд матчей: /last, /history, /<number>, /activity, room URL.
 """
 import re
 import time
@@ -8,7 +8,7 @@ from aiogram.filters import Command
 
 from ..runtime import dp, bot, match_cache
 from ..config import FACEIT_API_BASE
-from ..db import resolve_nickname, schedule_delete
+from ..db import resolve_nickname, schedule_delete, get_user_data
 from ..dashboard import (
     delete_user_message,
     clear_dashboard,
@@ -23,7 +23,10 @@ from ..faceit_api import (
 )
 from ..charts import render_activity_chart
 from ..formatting import section, kv, table
-from ..prematch import get_prematch_analysis
+from ..prematch import get_prematch_analysis, collect_prematch_data, call_prematch_llm
+from ..coach import _sanitize_for_telegram
+from ..balance import get_balance_footer
+
 
 
 @dp.message(Command("last"))
@@ -86,6 +89,69 @@ async def cmd_prematch(message: types.Message):
     await loading_msg.edit_text(f"{section('ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}")
     await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
     schedule_delete(loading_msg.chat.id, loading_msg.message_id)
+
+
+# Ловит любой URL комнаты faceit (faceit.com/.../room/1-<uuid>) и анализирует матч.
+_ROOM_RE = re.compile(r'faceit\.com/[^/]*/cs2/room/(1-[a-f0-9\-]+)', re.IGNORECASE)
+
+
+@dp.message(lambda m: bool(m.text and _ROOM_RE.search(m.text)))
+async def cmd_room_url(message: types.Message):
+    """Анализ матча по ссылке на room: парсит match_id, грузит составы, ИИ-вердикт."""
+    await delete_user_message(message)
+    user_id = message.from_user.id
+
+    match = _ROOM_RE.search(message.text)
+    if not match:
+        await answer_and_track(message, "Не удалось найти match_id в ссылке.")
+        return
+    match_id = match.group(1)
+
+    await clear_dashboard(user_id)
+    loading_msg = await message.answer("Гружу состав команд и анализирую...")
+
+    # Грузим матч через публичный Data API v4 /matches/{id}
+    match_data = await fetch_faceit_data(f"{FACEIT_API_BASE}/matches/{match_id}")
+    if not match_data or not match_data.get('teams'):
+        await loading_msg.edit_text(
+            "Не удалось загрузить матч. Возможно, матч ещё не создан или ссылка неверная."
+        )
+        await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
+        return
+
+    # Нужен player_id — берём из привязанного ника пользователя
+    user_data = get_user_data(user_id)
+    nickname = user_data[0] if user_data and user_data[0] else None
+    player_id = None
+    if nickname:
+        player_data = await get_player_by_nickname(nickname)
+        if player_data:
+            player_id = player_data['player_id']
+    if not nickname:
+        nickname = match_data.get('match_id', match_id)
+
+    # Data API /matches возвращает teams в формате {faction1: {nickname, players: [...]}}
+    # collect_prematch_data ожидает этот формат + player_id в одной из команд.
+    try:
+        prematch_data = await collect_prematch_data(match_data, player_id or "")
+        if not prematch_data:
+            await loading_msg.edit_text("Не удалось собрать данные команд.")
+            await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
+            return
+
+        text = await call_prematch_llm(prematch_data, nickname)
+        if not text:
+            await loading_msg.edit_text("ИИ-анализ не удался. Попробуй позже.")
+            await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
+            return
+
+        text = _sanitize_for_telegram(text) + await get_balance_footer()
+        await loading_msg.edit_text(f"{section('ПРЕДМАТЧ-АНАЛИЗ')}\n\n{text}")
+        await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
+        schedule_delete(loading_msg.chat.id, loading_msg.message_id)
+    except Exception as e:
+        await loading_msg.edit_text(f"Ошибка при анализе: {e}")
+        await replace_dashboard(user_id, loading_msg.chat.id, loading_msg.message_id)
 
 
 @dp.message(Command("history"))
