@@ -22,15 +22,14 @@ ESTIMATED_ELO_STEP = 20
 CACHE_TTL = 60
 GAME_MESSAGE_TTL = 6 * 3600
 
-# ИИ-тренёр (Anthropic API через прокси cheapvibecode)
-ANTHROPIC_BASE_URL = "https://ru.cheapvibecode.ru"
-ANTHROPIC_AUTH_TOKEN = "YOUR_ANTHROPIC_TOKEN"
-ANTHROPIC_MODEL = "claude-haiku-4-5"
+# ИИ (Tooken Club — OpenAI-совместимый API)
+TOOKEN_BASE_URL = "https://tooken.club/v1"
+TOOKEN_API_KEY = "YOUR_TOOKEN_TOKEN"
+TOOKEN_MODEL = "gpt-5.5"
 AI_CACHE_TTL = 600
 
-# Баланс токенов Cerberus API
-CERBERUS_BALANCE_API_URL = "https://empty-boat-3ba6.youngrevolutionary001.workers.dev/api/check-balance"
-CERBERUS_BALANCE_API_KEY = "YOUR_CERBERUS_API_KEY"
+# Баланс токенов Tooken
+TOOKEN_CABINET_URL = "https://tooken.club/dashboard?section=cabinet"
 BALANCE_CACHE_TTL = 60
 
 # Steam Web API

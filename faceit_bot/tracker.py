@@ -15,9 +15,6 @@ from datetime import datetime, timedelta, timezone
 from .runtime import bot, _api_cache
 from .config import (
     FACEIT_API_BASE,
-    ANTHROPIC_BASE_URL,
-    ANTHROPIC_AUTH_TOKEN,
-    ANTHROPIC_MODEL,
     WEBAPP_URL,
     WEBAPP_AUTH_SECRET,
 )
@@ -35,12 +32,8 @@ from .coach import _sanitize_for_telegram, _ANTHROPIC_AVAILABLE
 from .formatting import section
 from .prematch import get_prematch_analysis, is_prematch_sent, collect_prematch_data, call_prematch_llm
 from .balance import get_balance_footer
+from . import llm
 import aiohttp
-
-try:
-    from anthropic import Anthropic as _Anthropic
-except ImportError:
-    _Anthropic = None
 
 
 async def background_match_tracker():
@@ -250,7 +243,7 @@ async def extension_match_worker():
                             await _delete_pending_match(link_token, match_id)
                             continue
 
-                        text = await asyncio.to_thread(call_prematch_llm, prematch_data, nickname)
+                        text = await call_prematch_llm(prematch_data, nickname)
                         if text:
                             text = _sanitize_for_telegram(text) + await get_balance_footer()
                             await bot.send_message(
@@ -356,9 +349,9 @@ async def _collect_session_summary(user_id: int, nickname: str) -> str | None:
     return session_summary
 
 
-def _call_evening_llm(session_summary: str, nickname: str) -> str | None:
-    """Синхронный вызов LLM для вечернего отчёта."""
-    if not _ANTHROPIC_AVAILABLE or not _Anthropic:
+async def _call_evening_llm(session_summary: str, nickname: str) -> str | None:
+    """Асинхронный вызов LLM для вечернего отчёта (Tooken Club)."""
+    if not _ANTHROPIC_AVAILABLE:
         return None
 
     system_prompt = (
@@ -374,17 +367,15 @@ def _call_evening_llm(session_summary: str, nickname: str) -> str | None:
         "Дай вечерний отчёт (~200 слов)."
     )
 
+    resp = await llm.call_llm(
+        messages=[{"role": "user", "content": user_prompt}],
+        system=system_prompt,
+        max_tokens=512,
+    )
+    if not resp:
+        return None
     try:
-        client = _Anthropic(api_key=ANTHROPIC_AUTH_TOKEN, base_url=ANTHROPIC_BASE_URL)
-        resp = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=512,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return resp.content[0].text
+        return resp["choices"][0]["message"]["content"] or None
     except Exception:
         return None
 
@@ -411,7 +402,7 @@ async def evening_session_report():
                         # Матчей сегодня не было — пропускаем, не спамим
                         continue
 
-                    report = await asyncio.to_thread(_call_evening_llm, session_summary, nickname)
+                    report = await _call_evening_llm(session_summary, nickname)
                     if not report:
                         continue
 

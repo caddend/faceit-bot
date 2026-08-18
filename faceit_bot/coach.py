@@ -1,32 +1,20 @@
-﻿"""ИИ-тренёр: анализ статистики игрока через Anthropic API.
+﻿"""ИИ-тренёр: анализ статистики игрока через LLM (Tooken Club).
 
 Собирает агрегаты статистики + последние матчи, формирует промпт и
 отправляет в LLM. Результат кешируется в _api_cache на AI_CACHE_TTL секунд.
 """
-import asyncio
 import html
 import re
 import time
 
-from .config import (
-    ANTHROPIC_BASE_URL,
-    ANTHROPIC_AUTH_TOKEN,
-    ANTHROPIC_MODEL,
-    AI_CACHE_TTL,
-    FACEIT_API_BASE,
-)
+from .config import AI_CACHE_TTL, FACEIT_API_BASE
 from .runtime import _api_cache
 from .balance import get_balance_footer
 from .faceit_api import fetch_faceit_data, _match_result_for_player
 from .steam_api import get_cs2_lifetime_stats, get_steam_id_from_faceit
 
-# Проверяем доступность anthropic на уровне импорта (один раз).
-try:
-    from anthropic import Anthropic
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    Anthropic = None
-    _ANTHROPIC_AVAILABLE = False
+# LLM всегда доступен (HTTP API через llm.py).
+_ANTHROPIC_AVAILABLE = True
 
 
 # Теги, которые LLM может использовать и которые валидны в Telegram HTML.
@@ -313,21 +301,17 @@ async def get_coach_analysis(
 
     system_prompt, user_prompt = build_coach_prompt(stats_summary, recent_matches, steam_stats_text)
 
-    def _call_api():
-        client = Anthropic(api_key=ANTHROPIC_AUTH_TOKEN, base_url=ANTHROPIC_BASE_URL)
-        resp = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        # Anthropic API возвращает список content blocks, берём первый text
-        return resp.content[0].text
+    from . import llm
+    resp = await llm.call_llm(
+        messages=[{"role": "user", "content": user_prompt}],
+        system=system_prompt,
+        max_tokens=1024,
+    )
+    if not resp:
+        return None
 
     try:
-        text = await asyncio.to_thread(_call_api)
+        text = resp["choices"][0]["message"]["content"] or ""
     except Exception:
         return None
 

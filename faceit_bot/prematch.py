@@ -5,20 +5,11 @@
 """
 import asyncio
 
-from .config import (
-    ANTHROPIC_BASE_URL,
-    ANTHROPIC_AUTH_TOKEN,
-    ANTHROPIC_MODEL,
-    FACEIT_API_BASE,
-)
+from .config import FACEIT_API_BASE
 from .faceit_api import fetch_faceit_data
 from .coach import _sanitize_for_telegram, _ANTHROPIC_AVAILABLE
 from .balance import get_balance_footer
-
-try:
-    from anthropic import Anthropic
-except ImportError:
-    Anthropic = None
+from . import llm
 
 # Кеш отправленных предматч-анализов (match_id → True), чтобы не дублировать
 _prematch_sent: set[str] = set()
@@ -252,12 +243,12 @@ async def collect_prematch_data(ongoing_match: dict, player_id: str) -> dict | N
     }
 
 
-def call_prematch_llm(prematch_data: dict, nickname: str) -> str | None:
-    """Синхронный вызов LLM для предматч-анализа.
+async def call_prematch_llm(prematch_data: dict, nickname: str) -> str | None:
+    """Асинхронный вызов LLM для предматч-анализа (Tooken Club).
 
     Системный промпт требует максимум 100 слов, HTML-форматирование.
     """
-    if not _ANTHROPIC_AVAILABLE or not Anthropic:
+    if not _ANTHROPIC_AVAILABLE:
         return None
 
     my_team = prematch_data.get('my_team', [])
@@ -282,17 +273,18 @@ def call_prematch_llm(prematch_data: dict, nickname: str) -> str | None:
         f"Дай краткий анализ каждого игрока и вердикт. Максимум 100 слов."
     )
 
+    resp = await llm.call_llm(
+        messages=[{"role": "user", "content": user_prompt}],
+        system=system_prompt,
+        max_tokens=256,
+    )
+    if not resp:
+        return None
     try:
-        client = Anthropic(api_key=ANTHROPIC_AUTH_TOKEN, base_url=ANTHROPIC_BASE_URL)
-        resp = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=256,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        return resp.content[0].text
+        return resp["choices"][0]["message"]["content"] or None
     except Exception:
         return None
+
 
 
 async def get_prematch_analysis(player_id: str, nickname: str, faceit_session_token: str = None) -> tuple[str | None, str | None]:
@@ -318,7 +310,7 @@ async def get_prematch_analysis(player_id: str, nickname: str, faceit_session_to
     if not prematch_data:
         return None, match_id
 
-    text = await asyncio.to_thread(call_prematch_llm, prematch_data, nickname)
+    text = await call_prematch_llm(prematch_data, nickname)
     if not text:
         return None, match_id
 
